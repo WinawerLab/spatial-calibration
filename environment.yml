@@ -1,0 +1,11 @@
+name: calibration
+dependencies:
+  - python==3.6
+  - ipykernel
+  - numpy
+  - imageio
+  - exifread
+  - pandas
+  - matplotlib
+  - scipy
+  - seaborn
