@@ -1,6 +1,10 @@
 name: calibration
+channels:
+  - conda-forge
+  - defaults
 dependencies:
   - python==3.6
+  - pip
   - ipykernel
   - numpy
   - imageio
@@ -9,3 +13,34 @@ dependencies:
   - matplotlib
   - scipy
   - seaborn
+  - pillow
+  - lxml
+  - openpyxl
+  - xlrd
+  - configobj
+  - pyyaml
+  - gevent
+  - greenlet
+  - msgpack-python
+  - psutil
+  - pytables
+  - requests[security]
+  - cffi
+  - wxpython
+  - cython
+  - pyzmq
+  - pyserial
+  - pysoundfile
+  - python-bidi
+  - moviepy
+  - pyosf
+  - pip:
+      - pyglet
+      - zmq
+      - json-tricks
+      - pyparallel
+      - sounddevice
+      - pygame
+      - pysoundcard
+      - psychopy_ext
+      - psychopy
