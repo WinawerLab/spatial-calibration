@@ -13,7 +13,8 @@ def create_stimuli_set(screen_size):
     """
     num_freqs = int(np.floor(np.log2(np.min(screen_size)))) - 1
     img_size = 2 ** (num_freqs+1)
-    print(img_size)
+    print("Stimuli will contain %s pixels, gratings will be %s pixels wide" % (img_size,
+                                                                               img_size/2))
     x = np.linspace(0, 1, img_size, endpoint=False)
     x, y = np.meshgrid(x, x)
     im = np.zeros((num_freqs*3, img_size, img_size))

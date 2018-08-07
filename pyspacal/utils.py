@@ -2,45 +2,21 @@
 """utility functions
 """
 
+import matplotlib
+# the PyQt5 backend causes an issue with the environment necessary for psychopy, for some
+# reason. we explicitly tell it to use the SVG backend to avoid that. We set warn=False because the
+# notebook uses a different backend and will spout out a big warning to that effect; that's
+# unnecessarily alarming, so we hide it.
+matplotlib.use('SVG', warn=False)
 import os
 import imageio
 import exifread
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from . import camera_data
 import matplotlib.pyplot as plt
 
-
-# We "pythonify" the conventions in the Tkačik et al paper, so R=0, G=1, B=2
-BAYER_MATRICES = {
-    "NIKON D90": np.array([[1, 2], [0, 1]]),
-    "NIKON D70": np.array([[2, 1], [1, 0]]),
-    }
-
-
-# the key specifies which image we're referring to and should be the filename as saved in the
-# metadata dictionary (that is, the filename with no directory or extension). each value here is a
-# dictionary defining the edges of the various circles for the different images. they must
-# therefore have the following keys: 'circle_ctr', 'grating_edge', 'white_edge', and
-# 'black_edge'. The two numbers in each tuple are the pixels, as you can find using inkscape,
-# etc. THIS SHOULD NOT BE USED DIRECTLY. Use the function `load_pts_dict`, because (in order to get
-# the values here to correspond to the right image indices), we need to subtract the second number
-# in each tuple from img.shape[0]
-PTS_DICT = {'DSC_0004':
-            {'circle_ctr': (1130, 760), 
-             'grating_edge': [(1135, 1087), (780, 750),
-                              (1137, 390), (1378, 490),
-                              (1310, 437), (1063, 397),
-                              (1012, 1066), (1252, 1065),
-                              (1336, 1024)],
-             'white_edge': [(1585, 542), (1142, 243),
-                            (642,713), (1131, 1226)],
-             'black_edge': [(1143, 1359), (1764, 745),
-                            (504, 762), (1135, 98)]},
-            'DSC_0005':
-             {
-                 
-             }}
 
 def show_im_well(img, ppi=96, zoom=1):
     ppi = float(ppi)
@@ -188,7 +164,7 @@ def load_pts_dict(filename, img_shape):
     you should call `check_pts_dict` after you load this in to visually check that everything looks
     right.
     """
-    pts_dict_tmp = PTS_DICT[filename]
+    pts_dict_tmp = camera_data.PTS_DICT[filename]
     pts_dict = {}
     for k, v in pts_dict_tmp.items():
         if type(v) is not list:

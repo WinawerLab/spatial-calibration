@@ -3,7 +3,14 @@
 """
 
 import argparse
+import imageio
+import os
+import warnings
+import subprocess
 import numpy as np
+import pandas as pd
+from . import utils
+from . import camera_data
 from scipy import optimize
 from matplotlib import pyplot as plt
 
@@ -82,7 +89,7 @@ def standardize_rgb(demosaiced_img, iso, f_number, exposure_time, **kwargs):
     return demosaiced_img * standardizing_constant(iso, f_number, exposure_time)
 
 
-def calc_rgb_to_lms(s_rgb, s_lms):
+def calculate_rgb_to_lms(s_rgb, s_lms):
     """calculate the matrix that converts from rgb to lms values
 
     this regresses the two sensitivity matrices against each other to find the 3x3 matrix that best
@@ -91,7 +98,7 @@ def calc_rgb_to_lms(s_rgb, s_lms):
     return np.linalg.lstsq(s_rgb, s_lms)[0].transpose()
 
 
-def calc_conversion_matrix_scaling_factor(calc_rgb_to_lms, paper_rgb_to_lms=PAPER_RGB_TO_LMS):
+def calculate_conversion_matrix_scaling_factor(calc_rgb_to_lms, paper_rgb_to_lms=PAPER_RGB_TO_LMS):
     """calculate the scalar that best matches our calculated conversion matrix to the paper's
 
     the calculated rgb_to_lms matrix is based on sensitivities from the camspec database, which has
@@ -118,7 +125,7 @@ def luminance_image(standard_rgb_img, rgb_to_lms, scaling_factor=1., lms_to_lum=
 
     scaling_factor: float. how much to scale the rgb_to_lms matrix by. this is used when your
     rgb_to_lms is the calculated version, and so you need to rescale it so it can handle the much
-    larger values of the standard_rgb_img (see `calc_conversion_matrix_scaling_factor` for more
+    larger values of the standard_rgb_img (see `calculate_conversion_matrix_scaling_factor` for more
     details)
     """
     # that transpose is to get the dimensions in the right order for matmul. I'm unsure why that's
@@ -185,8 +192,8 @@ def run_fft(grating_1d):
 
     grating_1d should be a 1d array
 
-    this normalizes the grating by its mean and the fft by its length, so that the value of the
-    0-frequency component is 1.
+    this normalizes the grating by its mean and the fft by its length, so that the value of the DC
+    component is 1.
     """
     freqs = np.fft.fftshift(np.fft.fftfreq(len(grating_1d),))
     fft = np.fft.fftshift(np.fft.fft(grating_1d / grating_1d.mean()))
@@ -211,7 +218,7 @@ def check_filtering(grating_1d, filtered_grating_1d, contrast):
     
     print("Contrast: %s" % contrast)
 
-def calc_contrast(grating_1d, n_phases=20, plot_flag=True):
+def calculate_contrast(grating_1d, n_phases=20, plot_flag=True):
     """calculate the contrast of the specified grating
 
     following the procedure used by Tkacik et al, we try several different phase crops of the
@@ -220,7 +227,8 @@ def calc_contrast(grating_1d, n_phases=20, plot_flag=True):
     most power (ignoring the DC component) and filter out all other frequencies. we use this
     filtered grating to compute the Michelson contrast of this filtered grating
 
-    returns: filtered grating, Michelson contrast
+    returns: filtered grating, Michelson contrast, and the frequency at which the max power is
+    reached
     """
     amps = {}
     for phase in range(n_phases):
@@ -256,18 +264,112 @@ def calc_contrast(grating_1d, n_phases=20, plot_flag=True):
     if plot_flag:
         check_filtering(grating_1d, filtered_grating_1d, contrast)
     
-    return filtered_grating_1d, contrast
+    # this is the positive of the two frequencies
+    return filtered_grating_1d, contrast, freqs[power_argmax][-1]
 
 
 def main(fname):
     """calculate the contrast, doing all of the steps in between
 
     see the MTF notebook to see this calculation stepped through one step at a time
+
+    fname: str, the path to the NEF file to analyze
     """
-    'tmp'
+    if not fname.endswith(".NEF"):
+        raise Exception("Must pass in the NEF image! %s" % fname)
+    if not os.path.exists(fname.replace("NEF", "pgm")):
+        subprocess.call(["dcraw", "-4", "-d", fname])
+    fname_stem = fname.replace(".NEF", "")
+    img, metadata = utils.load_img_with_metadata(fname_stem)
+    mask, kernels = create_mosaic_mask(img.shape, camera_data.BAYER_MATRICES[metadata['camera']])
+    raw_demosaiced_image = demosaic_image(img, mask)
+    demosaiced_image = block_avg(raw_demosaiced_image)
+    standard_RGB = standardize_rgb(demosaiced_image, **metadata)
+    s_lms = utils.load_cone_fundamental_matrix()
+    s_rgb = utils.load_camspec_sensitivity_matrix(camera=metadata['camera'])    
+    rgb_to_lms = calculate_rgb_to_lms(s_rgb, s_lms)
+    scaling_factor = calculate_conversion_matrix_scaling_factor(rgb_to_lms)
+    lum_image = luminance_image(standard_RGB, rgb_to_lms, scaling_factor)
+    imageio.imsave(fname_stem + "_lum.png", lum_image)
+    try:
+        pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
+    except KeyError:
+        warnings.warn("Can't find points for %s, please add them!" % fname)
+        return None, None, None, None
+    else:
+        fig = utils.check_pts_dict(lum_image, pts_dict)
+        fig.savefig(fname_stem + "_pts.png", dpi=96)
+        plt.close(fig)
+        x0, y0, r_grating, border_ring_width = find_mask_params(**pts_dict)
+        grating_mask, white_mask, black_mask = utils.create_circle_masks(lum_image.shape, x0, y0,
+                                                                         r_grating, border_ring_width)
+        fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])    
+        fig.savefig(fname_stem + "_masks.png")
+        plt.close(fig)
+        grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
+        ring = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
+        filtered_grating_1d, grating_contrast, grating_freq = calculate_contrast(grating_1d, plot_flag=False)
+        filtered_ring, ring_contrast, ring_freq = calculate_contrast(ring, plot_flag=False)
+        return grating_freq, grating_contrast, ring_freq, ring_contrast
 
 
-def mtf(fname):
+def mtf(fnames, force_run=False):
     """run the entire MTF calculation
+
+    we only re-run this on the images that have not already been analyzed. to over-rule that
+    behavior (and run on all specified images), set force_run=True
+
+    fnames: list of strs, the paths to the NEF files to analyze
     """
-    'tmp'
+    grating_freqs, grating_contrasts, ring_freqs, ring_contrasts, content = [], [], [], [], []
+    try:
+        orig_df = pd.read_csv('mtf.csv')
+    except FileNotFoundError:
+        analyzed_fnames = []
+        orig_df = None
+    else:
+        analyzed_fnames = orig_df.filenames.unique()
+    if not force_run:
+        fnames = [f for f in fnames if f not in analyzed_fnames]
+    else:
+        orig_df = orig_df[~orig_df.filenames.isin(fnames)]
+    if fnames:
+        print("Analyzing:\n\t%s"%"\n\t".join(fnames))
+    else:
+        print("No new images to analyze, exiting...")
+        return
+    for f in fnames:
+        gf, gc, rf, rc = main(f)
+        if gc is not None:
+            grating_freqs.append(np.abs(gf[0]))
+            ring_freqs.append(np.abs(rf[0]))
+            grating_contrasts.append(gc)
+            ring_contrasts.append(rc)
+            content.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]])
+    df = pd.DataFrame(
+        {'grating_frequencies': grating_freqs, 'grating_contrasts': grating_contrasts,
+         'ring_frequencies': ring_freqs, 'ring_contrasts': ring_contrasts, 'filenames': fnames,
+         'image_content': content})
+    tmps = []
+    for name in ['grating', 'ring']:
+        tmp = df[['image_content', 'filenames', '%s_frequencies' % name, '%s_contrasts' % name]]
+        tmp = tmp.rename(columns={'%s_frequencies'%name: 'frequency',
+                                  '%s_contrasts'%name: 'contrast'})
+        tmp['grating_type'] = name
+        tmps.append(tmp)
+    df = pd.concat(tmps)
+    if orig_df is not None:
+        df = pd.concat([orig_df, df])
+    df.to_csv("mtf.csv", index=False)
+    return df
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("Calculate the MTF using the specified images")
+    parser.add_argument("images", nargs='+',
+                        help=("What images to calculate contrast for and use to create the MTF"))
+    parser.add_argument("--force_run", "-f", action="store_true",
+                        help=("Whether to run on all specified images or not. If not passed, we "
+                              "skip all images that have already been analyzed"))
+    args = vars(parser.parse_args())
+    mtf(args['images'], args['force_run'])
