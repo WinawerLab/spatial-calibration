@@ -14,26 +14,30 @@ def create_stimuli_set(screen_size):
     num_freqs = int(np.floor(np.log2(np.min(screen_size)))) - 1
     img_size = 2 ** (num_freqs+1)
     print("Stimuli will contain %s pixels, gratings will be %s pixels wide" % (img_size,
-                                                                               img_size/2))
+                                                                               img_size//2))
     x = np.linspace(0, 1, img_size, endpoint=False)
     x, y = np.meshgrid(x, x)
-    im = np.zeros((num_freqs*3, img_size, img_size))
+    im = np.zeros((num_freqs*2, img_size, img_size))
     mask = ((x-.5)**2 + (y-.5)**2) < (.25)**2
     white = ((x-.5)**2 + (y-.5)**2) < (.35)**2
     black = ((x-.5)**2 + (y-.5)**2) < (.45)**2
     black = black & ~white
     white = white & ~mask
+    x = np.arange(0, img_size)
+    x, _ = np.meshgrid(x, x)    
     for i in range(num_freqs):
-        f = 2**(i+1)
-        # signal.square aliases at the high frequencies, and at those, np.cos looks almost exactly
-        # like a square wave.
-        if i >= num_freqs-3:
-            func = np.cos
-        else:
-            func = signal.square
-        im[i, :, :] = func(2*np.pi*f*x)
-        im[i+num_freqs, :, :] = func(2*np.pi*f*y)
-        im[i+num_freqs*2, :, :] = func(2*np.pi*f*(x*np.cos(np.pi/4) - y*np.sin(np.pi/4)))
+        cycle_half_len = 2**(num_freqs-i-1)
+        # signal.square can look weird due to precision issues
+        # (https://stackoverflow.com/questions/38267021/incorrect-square-wave-sampling-using-scipy),
+        # so we construct our own instead
+        x = np.reshape(x, (img_size//cycle_half_len, img_size, cycle_half_len))
+        x[:, ::2] = 1
+        x[:, 1::2] = -1
+        im[i, :, :] = np.reshape(x, (img_size, img_size)).copy()
+        # these two variants give us the vertical and horizontal gratings
+        x[::2] = 1
+        x[1::2] = -1
+        im[i+num_freqs, :, :] = np.reshape(x, (img_size, img_size)).copy()
     for i in range(len(im)):
         tmp = im[i, :, :] * mask
         tmp[white] = 1
