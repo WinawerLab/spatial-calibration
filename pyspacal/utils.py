@@ -9,6 +9,9 @@ import matplotlib
 # unnecessarily alarming, so we hide it.
 matplotlib.use('SVG', warn=False)
 import os
+import glob
+import shutil
+import subprocess
 import imageio
 import exifread
 import numpy as np
@@ -28,22 +31,67 @@ def show_im_well(img, ppi=96, zoom=1):
     return fig
 
 
-def load_img_with_metadata(fname_stem):
+def _get_preprocessed_fname(raw_fname, preprocess_type):
+    """returns the preprocessed fname without an extension
+    """
+    preprocessed_fname = raw_fname.replace('raw', os.path.join("preprocessed",  preprocess_type))
+    return os.path.splitext(preprocessed_fname)[0]
+    
+
+
+def preprocess_image(raw_fname, preprocess_type):
+    """check if the appropriately preprocessed image has been created and, if not, try to create it
+    """
+    try:
+        _ = find_preprocessed_file(raw_fname, preprocess_type)
+    except Exception:
+        preprocessed_fname = _get_preprocessed_fname(raw_fname, preprocess_type)
+        if preprocess_type == 'no_demosaic':
+            subprocess.call(['dcraw', '-4', '-d', raw_fname])
+            shutil.move(os.path.splitext(raw_fname)[0] + ".pgm", preprocessed_fname + ".pgm")
+        elif preprocess_type == 'dcraw_vng_demosaic':
+            subprocess.call(['dcraw', '-4', '-q', '1', '-T', raw_fname])
+            shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
+        elif preprocess_type == 'dcraw_ahd_demosaic':
+            subprocess.call(['dcraw', '-4', '-q', '3', '-T', raw_fname])
+            shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
+        elif preprocess_type == 'nikon_demosaic':
+            raise Exception("Cannot find nikon_demosaic preprocessed image and cannot create it"
+                            " myself; use Nikon's Capture NX-D software to do this yourself")
+        else:
+            raise Exception("Unsure how to preprocess image for preprocess_type %s" % preprocess_type)
+
+
+def find_preprocessed_file(raw_fname, preprocess_type):
+    """find, load, and return preprocessed file from the raw file
+    """
+    preprocessed_fname = _get_preprocessed_fname(raw_fname, preprocess_type) + ".*"
+    preprocessed_file = glob.glob(preprocessed_fname)
+    if len(preprocessed_file) != 1:
+        raise Exception("Can't find unique preprocessed file! %s" % preprocessed_file)
+    return imageio.imread(preprocessed_file[0]).astype(np.double)
+
+
+def load_img_with_metadata(raw_fname, preprocess_type):
     """load image and grab relevant metadata
 
-    note that fname_stem should be the name without the extension, since we need to load in the NEF
-    file to get the metadata and the pgm file to use as the image.
+    note that fname should be the path to the raw image (contained within the data/raw directory)
+
+    preprocess_type should be the name of the directory under preprocessed/ where the preprocessed
+    image can be found
     """
-    with open(fname_stem+".NEF", 'rb') as f:
+    assert "raw" in raw_fname, "File should be in data/raw/ directory!"
+    with open(raw_fname, 'rb') as f:
         tags = exifread.process_file(f)
     # The f number and exposure time are Ratio and we want them as floats
     metadata = {'f_number': tags['EXIF FNumber'].values[0].num / float(tags['EXIF FNumber'].values[0].den),
                 'iso': tags['EXIF ISOSpeedRatings'].values[0],
                 'exposure_time': tags['EXIF ExposureTime'].values[0].num / float(tags['EXIF ExposureTime'].values[0].den),
                 'focus_mode': tags['MakerNote FocusMode'].values.strip(),
-                'filename': os.path.split(fname_stem)[-1],
-                'camera': tags['Image Model'].values}
-    img = imageio.imread(fname_stem+".pgm").astype(np.double)
+                'filename': os.path.splitext(os.path.split(raw_fname)[-1])[0],
+                'camera': tags['Image Model'].values,
+                'preprocess_type': preprocess_type}
+    img = find_preprocessed_file(raw_fname, preprocess_type)
     return img, metadata
 
 
@@ -164,13 +212,23 @@ def load_pts_dict(filename, img_shape):
     you should call `check_pts_dict` after you load this in to visually check that everything looks
     right.
     """
-    pts_dict_tmp = camera_data.PTS_DICT[filename]
+    pts_dict_tmp = camera_data.PTS_DICT[filename].copy()
+    pts_shape = pts_dict_tmp.pop('image_size')
+    # if ((not (img_shape[0] / pts_shape[0]).is_integer()) or
+    #     (not (img_shape[1] / pts_shape[1]).is_integer())):
+    #     if ((not (pts_shape[0] / img_shape[0]).is_integer()) or
+    #         (not (pts_shape[1] / img_shape[1]).is_integer())):
+    #         raise Exception("The points must be defined on an image that is integer down- or up-"
+    #                         "sampled from the image you're trying to extract the grating from! "
+    #                         "img_shape: (%s, %s), pts_shape: (%s, %s)" %
+    #                         (img_shape[0], img_shape[1], pts_shape[0], pts_shape[1]))
+    img_rescale = (img_shape[0] / pts_shape[0], img_shape[1] / pts_shape[1])
     pts_dict = {}
     for k, v in pts_dict_tmp.items():
         if type(v) is not list:
-            pts_dict[k] = (v[0], img_shape[0] - v[1])
+            pts_dict[k] = (int(img_rescale[0] * v[0]), int(img_shape[0] - img_rescale[1] * v[1]))
         else:
-            pts_dict[k] = [(i, img_shape[0] - j) for i, j in v]
+            pts_dict[k] = [(int(img_rescale[0] * i), int(img_shape[0] - img_rescale[1] * j)) for i, j in v]
     return pts_dict
 
 

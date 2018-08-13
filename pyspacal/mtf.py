@@ -4,6 +4,7 @@
 
 import argparse
 import imageio
+import itertools
 import os
 import warnings
 import subprocess
@@ -283,7 +284,7 @@ def calculate_contrast(grating_1d, n_phases=20, plot_flag=True):
     return filtered_grating_1d, contrast, normalized_contrast, freq_max
 
 
-def main(fname):
+def main(fname, preprocess_type):
     """calculate the contrast, doing all of the steps in between
 
     see the MTF notebook to see this calculation stepped through one step at a time
@@ -292,41 +293,48 @@ def main(fname):
     """
     if not fname.endswith(".NEF"):
         raise Exception("Must pass in the NEF image! %s" % fname)
-    if not os.path.exists(fname.replace("NEF", "pgm")):
-        subprocess.call(["dcraw", "-4", "-d", fname])
-    fname_stem = fname.replace(".NEF", "")
-    img, metadata = utils.load_img_with_metadata(fname_stem)
-    mask, kernels = create_mosaic_mask(img.shape, camera_data.BAYER_MATRICES[metadata['camera']])
-    raw_demosaiced_image = demosaic_image(img, mask)
-    demosaiced_image = block_avg(raw_demosaiced_image)
+    save_stem = os.path.splitext(fname.replace("raw", os.path.join("%s", "{preprocess_type}")))[0]
+    save_stem = save_stem.format(preprocess_type=preprocess_type)
+    for deriv in ['luminance', 'mask_check', 'preprocessed']:
+        if not os.path.isdir(os.path.dirname(save_stem % deriv)):
+            os.makedirs(os.path.dirname(save_stem % deriv))
+    utils.preprocess_image(fname, preprocess_type)
+    img, metadata = utils.load_img_with_metadata(fname, preprocess_type)
+    if img.ndim == 2:
+        mask, kernels = create_mosaic_mask(img.shape, camera_data.BAYER_MATRICES[metadata['camera']])
+        raw_demosaiced_image = demosaic_image(img, mask)
+        demosaiced_image = block_avg(raw_demosaiced_image)
+    else:
+        # we need to rearrange the axes so that RGB is on the first axis.
+        demosaiced_image = img.transpose((2, 0, 1))
     standard_RGB = standardize_rgb(demosaiced_image, **metadata)
     s_lms = utils.load_cone_fundamental_matrix()
     s_rgb = utils.load_camspec_sensitivity_matrix(camera=metadata['camera'])    
     rgb_to_lms = calculate_rgb_to_lms(s_rgb, s_lms)
     scaling_factor = calculate_conversion_matrix_scaling_factor(rgb_to_lms)
     lum_image = luminance_image(standard_RGB, rgb_to_lms, scaling_factor)
-    imageio.imsave(fname_stem + "_lum.png", lum_image)
+    imageio.imsave(save_stem % 'luminance' + "_lum.png", lum_image)
     try:
         pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
     except KeyError:
         warnings.warn("Can't find points for %s, please add them!" % fname)
-        return None, None, None, None, None
+        return None, None, None, None, None, None, None, None
     else:
         fig = utils.check_pts_dict(lum_image, pts_dict)
-        fig.savefig(fname_stem + "_pts.png", dpi=96)
+        fig.savefig(save_stem % 'mask_check' + "_pts.png", dpi=96)
         plt.close(fig)
         x0, y0, r_grating, border_ring_width = find_mask_params(**pts_dict)
         grating_mask, white_mask, black_mask = utils.create_circle_masks(lum_image.shape, x0, y0,
                                                                          r_grating, border_ring_width)
         fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])    
-        fig.savefig(fname_stem + "_masks.png")
+        fig.savefig(save_stem % 'mask_check' + "_masks.png")
         plt.close(fig)
         grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
         ring = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
         _, _, grating_contrast, grating_freq = calculate_contrast(grating_1d, plot_flag=False)
         _, _, ring_contrast, ring_freq = calculate_contrast(ring, plot_flag=False)
         return (grating_freq, grating_contrast, ring_freq, ring_contrast, metadata,
-                raw_demosaiced_image, demosaiced_image, standard_RGB, lum_image)
+                demosaiced_image, standard_RGB, lum_image)
 
 
 def mtf(fnames, force_run=False):
@@ -337,34 +345,47 @@ def mtf(fnames, force_run=False):
 
     fnames: list of strs, the paths to the NEF files to analyze
     """
+    if type(fnames) is not list:
+        fnames = [fnames]
+    # construct the list of tuples (raw_image_filename, preproc_type) to analyze. we make it a list
+    # so we can iterate through it multiple times.
+    tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic', 'nikon_demosaic',
+                                                        'dcraw_vng_demosaic', 'dcraw_ahd_demosaic']))
     grating_freqs, grating_contrasts, ring_freqs, ring_contrasts = [], [], [], []
     # context is what the image was presented on, content is how many cycles are in the image
     content, context = [], []
     # we also want to keep some information about our calculated luminance and other images
     lum_mean, lum_min, lum_max = [], [], []
-    raw_demosaic_mean, raw_demosaic_min, raw_demosaic_max = [], [], []
     demosaic_mean, demosaic_min, demosaic_max = [], [], []
     std_mean, std_min, std_max = [], [], []
     # and the metadata
-    iso, f_number, exposure_time = [], [], []
+    iso, f_number, exposure_time, preprocess_types = [], [], [], []
     try:
         orig_df = pd.read_csv('mtf.csv')
     except FileNotFoundError:
-        analyzed_fnames = []
-        orig_df = None
-    else:
-        analyzed_fnames = orig_df.filenames.unique()
+        orig_df = pd.DataFrame({'filenames': [], 'preprocess_type': []})
     if not force_run:
-        fnames = [f for f in fnames if f not in analyzed_fnames]
+        tmp = []
+        for f, preproc in tuples_to_analyze:
+            # then this exact pair is not in orig_df and so we should analyze it. we use isin
+            # instead of == because isin will work for the emptydataframe as well
+            if orig_df[(orig_df.filenames.isin([f])) & (orig_df.preprocess_type.isin([preproc]))].empty:
+                tmp.append((f, preproc))
+        tuples_to_analyze= tmp
     else:
-        orig_df = orig_df[~orig_df.filenames.isin(fnames)]
-    if fnames:
-        print("Analyzing:\n\t%s"%"\n\t".join(fnames))
+        # iterate through the tuples to analyze and drop all of them from orig_df
+        for f, preproc in tuples_to_analyze:
+            idx = orig_df[(orig_df.filenames.isin([f])) & (orig_df.preprocess_type.isin([preproc]))].index
+            orig_df.drop(idx)
+    if tuples_to_analyze:
+        print("Analyzing:\n\t%s"%"\n\t".join([", ".join(tup) for tup in tuples_to_analyze]))
     else:
         print("No new images to analyze, exiting...")
         return
-    for f in fnames:
-        gf, gc, rf, rc, meta, raw_demosaic, demosaic, std, lum = main(f)
+    fnames = []
+    for f, preproc in tuples_to_analyze:
+        print("Analyzing %s with preproc method %s" % (f, preproc))
+        gf, gc, rf, rc, meta, demosaic, std, lum = main(f, preproc)
         if gc is not None:
             grating_freqs.append(np.abs(gf))
             ring_freqs.append(np.abs(rf))
@@ -372,9 +393,6 @@ def mtf(fnames, force_run=False):
             ring_contrasts.append(rc)
             content.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][1])
             context.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][0])
-            raw_demosaic_mean.append(raw_demosaic.mean())
-            raw_demosaic_min.append(raw_demosaic.min())
-            raw_demosaic_max.append(raw_demosaic.max())
             demosaic_mean.append(demosaic.mean())
             demosaic_min.append(demosaic.min())
             demosaic_max.append(demosaic.max())
@@ -387,6 +405,8 @@ def mtf(fnames, force_run=False):
             iso.append(meta['iso'])
             f_number.append(meta['f_number'])
             exposure_time.append(meta['exposure_time'])
+            preprocess_types.append(preproc)
+            fnames.append(f)
     # is there a better way to construct this dataframe? almost certainly, but this does what I
     # want it to do
     df = pd.DataFrame(
@@ -395,17 +415,15 @@ def mtf(fnames, force_run=False):
          'image_content': content, 'image_context': context, 'luminance_mean': lum_mean,
          'luminance_min': lum_min, 'luminance_max': lum_max, 'std_RGB_mean': std_mean,
          'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso, 'f_number': f_number,
-         'exposure_time': exposure_time, 'raw_demosaiced_mean': raw_demosaic_mean,
-         'raw_demosaiced_min': raw_demosaic_min, 'raw_demosaiced_max': raw_demosaic_max,
-         'demosaiced_mean': demosaic_mean, 'demosaiced_min': demosaic_min,
-         'demosaiced_max': demosaic_max})
+         'exposure_time': exposure_time, 'demosaiced_mean': demosaic_mean,
+         'demosaiced_min': demosaic_min, 'demosaiced_max': demosaic_max,
+         'preprocess_type': preprocess_types})
     tmps = []
     for name in ['grating', 'ring']:
         tmp = df[['image_content', 'image_context', 'iso', 'f_number', 'exposure_time',
-                  'luminance_mean', 'luminance_min', 'luminance_max', 'raw_demosaiced_mean',
-                  'raw_demosaiced_min', 'raw_demosaiced_max', 'demosaiced_mean', 'demosaiced_min',
-                  'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max', 'filenames',
-                  '%s_frequencies' % name, '%s_contrasts' % name]]
+                  'luminance_mean', 'luminance_min', 'luminance_max', 'demosaiced_mean',
+                  'demosaiced_min', 'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max',
+                  'filenames', '%s_frequencies' % name, '%s_contrasts' % name, 'preprocess_type']]
         tmp = tmp.rename(columns={'%s_frequencies'%name: 'frequency',
                                   '%s_contrasts'%name: 'contrast'})
         tmp['grating_type'] = name
@@ -413,6 +431,7 @@ def mtf(fnames, force_run=False):
     df = pd.concat(tmps)
     if orig_df is not None:
         df = pd.concat([orig_df, df])
+    df = df.reset_index()
     df.to_csv("mtf.csv", index=False)
     return df
 
