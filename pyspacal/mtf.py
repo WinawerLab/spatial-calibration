@@ -199,13 +199,12 @@ def run_fft(grating_1d):
     fft = np.fft.fftshift(np.fft.fft(grating_1d / grating_1d.mean()))
     fft /= len(fft)
 
-    power = fft * np.conj(fft)
-    amp = np.sqrt(power)
+    amp = np.abs(fft)
 
-    return power, amp, fft, freqs    
+    return amp, fft, freqs    
 
 
-def check_filtering(grating_1d, filtered_grating_1d, contrast):
+def check_filtering(grating_1d, filtered_grating_1d, normalized_contrast):
     """plot
     """
     plt.figure(figsize=(25, 5))
@@ -216,7 +215,7 @@ def check_filtering(grating_1d, filtered_grating_1d, contrast):
     plt.plot(filtered_grating_1d)
     plt.title('Filtered fundamental')
     
-    print("Contrast: %s" % contrast)
+    print("Square-wave contrast: %s" % normalized_contrast)
 
 def calculate_contrast(grating_1d, n_phases=20, plot_flag=True):
     """calculate the contrast of the specified grating
@@ -227,45 +226,61 @@ def calculate_contrast(grating_1d, n_phases=20, plot_flag=True):
     most power (ignoring the DC component) and filter out all other frequencies. we use this
     filtered grating to compute the Michelson contrast of this filtered grating
 
-    returns: filtered grating, Michelson contrast, and the frequency at which the max power is
-    reached
+    returns: filtered grating, contrast of the fundamental, normalized contrast (of the
+    square-wave), and the frequency at which the max power is reached
     """
     amps = {}
     for phase in range(n_phases):
-        power, amp, fft, freqs = run_fft(grating_1d[phase:])
-        power[freqs==0] = 0
-        amps[phase] = np.max(amp[np.argwhere(power==np.max(power))])
+        amp, fft, freqs = run_fft(grating_1d[phase:])
+        amp[freqs==0] = 0
+        amps[phase] = np.max(amp)
         
     max_phase = max(amps, key=lambda key: amps[key])
-    power, amp, fft, freqs = run_fft(grating_1d[max_phase:])
+    amp, fft, freqs = run_fft(grating_1d[max_phase:])
     
-    if plot_flag:
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-        # plotting the fft doesn't make a lot of sense because it's complex-valued
-        for ax, data, title in zip(axes, [power, amp], ['power', 'amplitude']):
-            ax.stem(freqs[freqs>=0], data[freqs>=0])
-            ax.set_title(title)
+    # since this comes from a real signal, we know the fft is symmetric (if it's not exactly
+    # symmetric for some reason, that's because of a precision error), so we just drop the negative
+    # frequencies and double the positive ones (except the DC and highest frequency components,
+    # which correspond to each other). we do this for the amplitude, since that's what we'll use to
+    # get the contrast, but not for the fft, since we use that to reconstruct the filtered signal.
+    amp = amp[freqs>=0]
+    amp[1:-1] = 2*amp[1:-1]
 
-    power[freqs==0] = 0
-    power_argmax = np.argwhere(power==np.max(power))
+    if plot_flag:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+        ax.stem(freqs[freqs>=0], amp)
+        ax.set_title('Amplitude')
+
+    amp[freqs[freqs>=0]==0] = 0
+    amp_argmax = np.argmax(amp)
+    contrast = amp[amp_argmax]
+    # contrast is the contrast of the fundamental; in order to get the contrast of the square-wave
+    # it came from, we have to multiply it by pi / 4, see
+    # http://mathworld.wolfram.com/FourierSeriesSquareWave.html for an explanation
+    normalized_contrast = contrast * np.pi / 4
+
+    freq_max = freqs[freqs>=0][amp_argmax]
+    freq_argmax = np.array([np.argwhere(freqs==freq_max)[0],
+                            np.argwhere(freqs==-freq_max)[0]])
 
     if plot_flag:
         print("Max phase crop: %s" % max_phase)
-        print("Max frequencies:\n %s\n" % freqs[power_argmax])
-        print("Amplitude at max freqs:\n %s\n" % amp[power_argmax])
+        print("Max frequency:\n %s\n" % freq_max)
+        print("Amplitude at max frequency:\n %s\n" % amp[amp_argmax])
 
     filtered_fft = np.zeros(len(fft), dtype=np.complex)
     filtered_fft[np.argwhere(freqs==0)] = fft[np.argwhere(freqs==0)]
-    filtered_fft[power_argmax] = fft[power_argmax]
+    filtered_fft[freq_argmax] = fft[freq_argmax]
 
-    filtered_grating_1d = np.abs(np.fft.ifft(np.fft.ifftshift(filtered_fft)) * len(fft))
-    contrast = (np.max(filtered_grating_1d) - np.min(filtered_grating_1d)) / (np.max(filtered_grating_1d) + np.min(filtered_grating_1d))
-    
+    filtered_grating_1d = np.fft.ifft(np.fft.ifftshift(filtered_fft)) * len(fft)
+    # if we did everything right, this should have zero imaginary components
+    assert np.allclose(np.imag(filtered_grating_1d), np.zeros(len(fft))), "Something went wrong, the reconstructed grating is complex!"
+    filtered_grating_1d = np.real(filtered_grating_1d) * grating_1d.mean()
+
     if plot_flag:
-        check_filtering(grating_1d, filtered_grating_1d, contrast)
+        check_filtering(grating_1d, filtered_grating_1d, normalized_contrast)
     
-    # this is the positive of the two frequencies
-    return filtered_grating_1d, contrast, freqs[power_argmax][-1]
+    return filtered_grating_1d, contrast, normalized_contrast, freq_max
 
 
 def main(fname):
@@ -295,7 +310,7 @@ def main(fname):
         pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
     except KeyError:
         warnings.warn("Can't find points for %s, please add them!" % fname)
-        return None, None, None, None
+        return None, None, None, None, None
     else:
         fig = utils.check_pts_dict(lum_image, pts_dict)
         fig.savefig(fname_stem + "_pts.png", dpi=96)
@@ -308,9 +323,10 @@ def main(fname):
         plt.close(fig)
         grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
         ring = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
-        filtered_grating_1d, grating_contrast, grating_freq = calculate_contrast(grating_1d, plot_flag=False)
-        filtered_ring, ring_contrast, ring_freq = calculate_contrast(ring, plot_flag=False)
-        return grating_freq, grating_contrast, ring_freq, ring_contrast
+        _, _, grating_contrast, grating_freq = calculate_contrast(grating_1d, plot_flag=False)
+        _, _, ring_contrast, ring_freq = calculate_contrast(ring, plot_flag=False)
+        return (grating_freq, grating_contrast, ring_freq, ring_contrast, metadata,
+                raw_demosaiced_image, demosaiced_image, standard_RGB, lum_image)
 
 
 def mtf(fnames, force_run=False):
@@ -321,7 +337,16 @@ def mtf(fnames, force_run=False):
 
     fnames: list of strs, the paths to the NEF files to analyze
     """
-    grating_freqs, grating_contrasts, ring_freqs, ring_contrasts, content = [], [], [], [], []
+    grating_freqs, grating_contrasts, ring_freqs, ring_contrasts = [], [], [], []
+    # context is what the image was presented on, content is how many cycles are in the image
+    content, context = [], []
+    # we also want to keep some information about our calculated luminance and other images
+    lum_mean, lum_min, lum_max = [], [], []
+    raw_demosaic_mean, raw_demosaic_min, raw_demosaic_max = [], [], []
+    demosaic_mean, demosaic_min, demosaic_max = [], [], []
+    std_mean, std_min, std_max = [], [], []
+    # and the metadata
+    iso, f_number, exposure_time = [], [], []
     try:
         orig_df = pd.read_csv('mtf.csv')
     except FileNotFoundError:
@@ -339,20 +364,48 @@ def mtf(fnames, force_run=False):
         print("No new images to analyze, exiting...")
         return
     for f in fnames:
-        gf, gc, rf, rc = main(f)
+        gf, gc, rf, rc, meta, raw_demosaic, demosaic, std, lum = main(f)
         if gc is not None:
-            grating_freqs.append(np.abs(gf[0]))
-            ring_freqs.append(np.abs(rf[0]))
+            grating_freqs.append(np.abs(gf))
+            ring_freqs.append(np.abs(rf))
             grating_contrasts.append(gc)
             ring_contrasts.append(rc)
-            content.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]])
+            content.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][1])
+            context.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][0])
+            raw_demosaic_mean.append(raw_demosaic.mean())
+            raw_demosaic_min.append(raw_demosaic.min())
+            raw_demosaic_max.append(raw_demosaic.max())
+            demosaic_mean.append(demosaic.mean())
+            demosaic_min.append(demosaic.min())
+            demosaic_max.append(demosaic.max())
+            std_mean.append(std.mean())
+            std_min.append(std.min())
+            std_max.append(std.max())
+            lum_mean.append(lum.mean())
+            lum_min.append(lum.min())
+            lum_max.append(lum.max())
+            iso.append(meta['iso'])
+            f_number.append(meta['f_number'])
+            exposure_time.append(meta['exposure_time'])
+    # is there a better way to construct this dataframe? almost certainly, but this does what I
+    # want it to do
     df = pd.DataFrame(
         {'grating_frequencies': grating_freqs, 'grating_contrasts': grating_contrasts,
          'ring_frequencies': ring_freqs, 'ring_contrasts': ring_contrasts, 'filenames': fnames,
-         'image_content': content})
+         'image_content': content, 'image_context': context, 'luminance_mean': lum_mean,
+         'luminance_min': lum_min, 'luminance_max': lum_max, 'std_RGB_mean': std_mean,
+         'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso, 'f_number': f_number,
+         'exposure_time': exposure_time, 'raw_demosaiced_mean': raw_demosaic_mean,
+         'raw_demosaiced_min': raw_demosaic_min, 'raw_demosaiced_max': raw_demosaic_max,
+         'demosaiced_mean': demosaic_mean, 'demosaiced_min': demosaic_min,
+         'demosaiced_max': demosaic_max})
     tmps = []
     for name in ['grating', 'ring']:
-        tmp = df[['image_content', 'filenames', '%s_frequencies' % name, '%s_contrasts' % name]]
+        tmp = df[['image_content', 'image_context', 'iso', 'f_number', 'exposure_time',
+                  'luminance_mean', 'luminance_min', 'luminance_max', 'raw_demosaiced_mean',
+                  'raw_demosaiced_min', 'raw_demosaiced_max', 'demosaiced_mean', 'demosaiced_min',
+                  'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max', 'filenames',
+                  '%s_frequencies' % name, '%s_contrasts' % name]]
         tmp = tmp.rename(columns={'%s_frequencies'%name: 'frequency',
                                   '%s_contrasts'%name: 'contrast'})
         tmp['grating_type'] = name
