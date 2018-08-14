@@ -188,100 +188,39 @@ def find_mask_params(circle_ctr, grating_edge, white_edge, black_edge):
     return res.x
 
 
-def run_fft(grating_1d):
-    """run the fft, returning power, amplitude, fft, and frequencies
+def calculate_contrast(image):
+    """calculate the RMS contrast of the specified image
 
-    grating_1d should be a 1d array
+    RMS contrast is the standard deviation of the values in the image divided by the mean of the
+    image: $\frac{\sqrt{\frac{\sum{I_i - \bar{I}}}{n}}}{\bar{I}}$. note that, when you're getting
+    contrast of some patch / subset of the image, you should just pass that part of the image; the
+    mean comes from the same local patch (rather than being the mean of the whole image). also note
+    that this is not bounded between 0 and 1; for example, the RMS contrast of a delta function is
+    infinite. and note that it will be 1 when there are equal number of white and black pixels, but
+    if, for example, there are more black pixels, RMS will be less than 1.
 
-    this normalizes the grating by its mean and the fft by its length, so that the value of the DC
-    component is 1.
+    returns: RMS contrast
     """
-    freqs = np.fft.fftshift(np.fft.fftfreq(len(grating_1d),))
-    fft = np.fft.fftshift(np.fft.fft(grating_1d / grating_1d.mean()))
-    fft /= len(fft)
-
-    amp = np.abs(fft)
-
-    return amp, fft, freqs    
+    return np.sqrt(np.mean(np.square(image - np.mean(image)))) / np.mean(image)
 
 
-def check_filtering(grating_1d, filtered_grating_1d, normalized_contrast):
-    """plot
+def _calc_freq(image_1d, n_cycles):
+    return n_cycles / len(image_1d)
+
+
+def get_frequency(image, metadata, grating_mask, white_mask, black_mask, x0, y0):
+    """get the frequency of the two segments of the passed in image (grating and border)
+
+    we cheat with this, using the fact that we know the number of cycles in the grating (from the
+    image metadata) and the border (which is 1), so we only need to find the length of the signals
+    in order to get the frequency
     """
-    plt.figure(figsize=(25, 5))
-    plt.plot(grating_1d)
-    plt.title('1d grating')
-    
-    plt.figure(figsize=(25, 5))
-    plt.plot(filtered_grating_1d)
-    plt.title('Filtered fundamental')
-    
-    print("Square-wave contrast: %s" % normalized_contrast)
-
-def calculate_contrast(grating_1d, n_phases=20, plot_flag=True):
-    """calculate the contrast of the specified grating
-
-    following the procedure used by Tkacik et al, we try several different phase crops of the
-    grating, dropping the first range(n_phases) points, and seeing which phase has the highest
-    power (across all frequencies). we crop to this phase, then find the frequency that has the
-    most power (ignoring the DC component) and filter out all other frequencies. we use this
-    filtered grating to compute the Michelson contrast of this filtered grating
-
-    returns: filtered grating, contrast of the fundamental, normalized contrast (of the
-    square-wave), and the frequency at which the max power is reached
-    """
-    amps = {}
-    for phase in range(n_phases):
-        amp, fft, freqs = run_fft(grating_1d[phase:])
-        amp[freqs==0] = 0
-        amps[phase] = np.max(amp)
-        
-    max_phase = max(amps, key=lambda key: amps[key])
-    amp, fft, freqs = run_fft(grating_1d[max_phase:])
-    
-    # since this comes from a real signal, we know the fft is symmetric (if it's not exactly
-    # symmetric for some reason, that's because of a precision error), so we just drop the negative
-    # frequencies and double the positive ones (except the DC and highest frequency components,
-    # which correspond to each other). we do this for the amplitude, since that's what we'll use to
-    # get the contrast, but not for the fft, since we use that to reconstruct the filtered signal.
-    amp = amp[freqs>=0]
-    amp[1:-1] = 2*amp[1:-1]
-
-    if plot_flag:
-        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-        ax.stem(freqs[freqs>=0], amp)
-        ax.set_title('Amplitude')
-
-    amp[freqs[freqs>=0]==0] = 0
-    amp_argmax = np.argmax(amp)
-    contrast = amp[amp_argmax]
-    # contrast is the contrast of the fundamental; in order to get the contrast of the square-wave
-    # it came from, we have to multiply it by pi / 4, see
-    # http://mathworld.wolfram.com/FourierSeriesSquareWave.html for an explanation
-    normalized_contrast = contrast * np.pi / 4
-
-    freq_max = freqs[freqs>=0][amp_argmax]
-    freq_argmax = np.array([np.argwhere(freqs==freq_max)[0],
-                            np.argwhere(freqs==-freq_max)[0]])
-
-    if plot_flag:
-        print("Max phase crop: %s" % max_phase)
-        print("Max frequency:\n %s\n" % freq_max)
-        print("Amplitude at max frequency:\n %s\n" % amp[amp_argmax])
-
-    filtered_fft = np.zeros(len(fft), dtype=np.complex)
-    filtered_fft[np.argwhere(freqs==0)] = fft[np.argwhere(freqs==0)]
-    filtered_fft[freq_argmax] = fft[freq_argmax]
-
-    filtered_grating_1d = np.fft.ifft(np.fft.ifftshift(filtered_fft)) * len(fft)
-    # if we did everything right, this should have zero imaginary components
-    assert np.allclose(np.imag(filtered_grating_1d), np.zeros(len(fft))), "Something went wrong, the reconstructed grating is complex!"
-    filtered_grating_1d = np.real(filtered_grating_1d) * grating_1d.mean()
-
-    if plot_flag:
-        check_filtering(grating_1d, filtered_grating_1d, normalized_contrast)
-    
-    return filtered_grating_1d, contrast, normalized_contrast, freq_max
+    grating_1d = utils.extract_1d_grating(image, grating_mask)
+    border_1d = utils.extract_1d_border(image, white_mask, black_mask, x0, y0)
+    # this converts a string of the format "32 cyc/image" into the integer 32
+    grating_freq = _calc_freq(grating_1d, int(metadata['content'].split(' ')[0]))
+    border_freq = _calc_freq(border_1d, 1)
+    return grating_freq, border_freq
 
 
 def main(fname, preprocess_type):
@@ -329,11 +268,12 @@ def main(fname, preprocess_type):
         fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])    
         fig.savefig(save_stem % 'mask_check' + "_masks.png")
         plt.close(fig)
-        grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
-        ring = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
-        _, _, grating_contrast, grating_freq = calculate_contrast(grating_1d, plot_flag=False)
-        _, _, ring_contrast, ring_freq = calculate_contrast(ring, plot_flag=False)
-        return (grating_freq, grating_contrast, ring_freq, ring_contrast, metadata,
+        grating_contrast = calculate_contrast(lum_image[grating_mask])
+        # since the masks are boolean, we can simply sum them to get the union
+        border_contrast = calculate_contrast(lum_image[white_mask+black_mask])
+        grating_freq, border_freq = get_frequency(lum_image, metadata, grating_mask, white_mask,
+                                                  black_mask, x0, y0)
+        return (grating_freq, grating_contrast, border_freq, border_contrast, metadata,
                 demosaiced_image, standard_RGB, lum_image)
 
 
@@ -351,7 +291,7 @@ def mtf(fnames, force_run=False):
     # so we can iterate through it multiple times.
     tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic', 'nikon_demosaic',
                                                         'dcraw_vng_demosaic', 'dcraw_ahd_demosaic']))
-    grating_freqs, grating_contrasts, ring_freqs, ring_contrasts = [], [], [], []
+    grating_freqs, grating_contrasts, border_freqs, border_contrasts = [], [], [], []
     # context is what the image was presented on, content is how many cycles are in the image
     content, context = [], []
     # we also want to keep some information about our calculated luminance and other images
@@ -388,11 +328,11 @@ def mtf(fnames, force_run=False):
         gf, gc, rf, rc, meta, demosaic, std, lum = main(f, preproc)
         if gc is not None:
             grating_freqs.append(np.abs(gf))
-            ring_freqs.append(np.abs(rf))
+            border_freqs.append(np.abs(rf))
             grating_contrasts.append(gc)
-            ring_contrasts.append(rc)
-            content.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][1])
-            context.append(camera_data.IMG_INFO[os.path.split(f.replace(".NEF", ""))[-1]][0])
+            border_contrasts.append(rc)
+            content.append(meta['content'])
+            context.append(meta['context'])
             demosaic_mean.append(demosaic.mean())
             demosaic_min.append(demosaic.min())
             demosaic_max.append(demosaic.max())
@@ -411,7 +351,7 @@ def mtf(fnames, force_run=False):
     # want it to do
     df = pd.DataFrame(
         {'grating_frequencies': grating_freqs, 'grating_contrasts': grating_contrasts,
-         'ring_frequencies': ring_freqs, 'ring_contrasts': ring_contrasts, 'filenames': fnames,
+         'border_frequencies': border_freqs, 'border_contrasts': border_contrasts, 'filenames': fnames,
          'image_content': content, 'image_context': context, 'luminance_mean': lum_mean,
          'luminance_min': lum_min, 'luminance_max': lum_max, 'std_RGB_mean': std_mean,
          'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso, 'f_number': f_number,
@@ -419,7 +359,7 @@ def mtf(fnames, force_run=False):
          'demosaiced_min': demosaic_min, 'demosaiced_max': demosaic_max,
          'preprocess_type': preprocess_types})
     tmps = []
-    for name in ['grating', 'ring']:
+    for name in ['grating', 'border']:
         tmp = df[['image_content', 'image_context', 'iso', 'f_number', 'exposure_time',
                   'luminance_mean', 'luminance_min', 'luminance_max', 'demosaiced_mean',
                   'demosaiced_min', 'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max',
