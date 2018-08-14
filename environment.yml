@@ -2,6 +2,7 @@ name: calibration
 channels:
   - conda-forge
   - defaults
+  - anaconda
 dependencies:
   - python==3.6
   - pip
@@ -24,7 +25,6 @@ dependencies:
   - msgpack-python
   - psutil
   - pytables
-  - requests[security]
   - cffi
   - wxpython
   - cython
@@ -35,6 +35,7 @@ dependencies:
   - moviepy
   - pyosf
   - pip:
+      - requests[security]
       - pyglet
       - zmq
       - json-tricks
