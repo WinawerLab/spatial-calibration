@@ -74,7 +74,6 @@ def test_display(screen_size, monitor_name='vpixx', img_size=512, screen_num=1):
                         "vpixx to use a linear gamma")
     wait_text = visual.TextStim(win, ("Press q or esc to quit, any other key to advance"))
     win.mouseVisible = False
-    # DO SOMETHING ABOUT THIS
     wait_text.draw()
     win.flip()
     all_keys = event.waitKeys()
