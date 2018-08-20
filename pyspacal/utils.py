@@ -247,45 +247,62 @@ def check_pts_dict(img, pts_dict, zoom=1):
     return _plot_pts_on_img(img, pts, zoom)
 
 
-def create_circle_masks(img_shape, circle_ctr_x, circle_ctr_y, grating_radius, border_ring_width):
-    """create circle masks to extract relevant regions
+def _square_eqt(x, y, x0, y0):
+    """simple equation for a square.
+
+    this returns: max(np.dstack([abs(x0 - x), abs(y0 -y)]), 2). this should then be compared to the
+    "radius" of the square (half the width)
+
+    the equation comes from this post:
+    http://polymathprogrammer.com/2010/03/01/answered-can-you-describe-a-square-with-1-equation/
+
+    x, y: either one number or arrays of the same size (as returned by meshgrid)
+    """
+    x = np.array(x)
+    y = np.array(y)
+    vals = np.max(np.dstack([np.abs(x0 - x), np.abs(y0 - y)]), 2)
+    return vals.reshape(x.shape)
+
+
+def create_square_masks(img_shape, square_ctr_x, square_ctr_y, grating_radius, border_ring_width):
+    """create square masks to extract relevant regions
 
     this uses the outputs from mtf.find_mask_params and returns three boolean masks to extract: the
     grating, the white region of the border, and the black region of the border
     """
     xgrid, ygrid = np.meshgrid(range(img_shape[1]), range(img_shape[0]))
     grating_mask = np.zeros(img_shape)
-    grating_mask[(xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 <= grating_radius**2] = 1
+    grating_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= grating_radius] = 1
     white_mask = np.zeros(img_shape)
-    white_mask[(xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 <= (grating_radius+border_ring_width)**2] = 1
+    white_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= (grating_radius+border_ring_width)] = 1
     white_mask -= grating_mask
     black_mask = np.zeros(img_shape)
-    black_mask[(xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 <= (grating_radius+2*border_ring_width)**2] = 1
+    black_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= (grating_radius+2*border_ring_width)] = 1
     black_mask -= (grating_mask + white_mask)
     return grating_mask.astype(bool), white_mask.astype(bool), black_mask.astype(bool)
 
 
-def create_circle_outlines(img_shape, circle_ctr_x, circle_ctr_y, grating_radius,
+def create_square_outlines(img_shape, square_ctr_x, square_ctr_y, grating_radius,
                            border_ring_width, edge_tol=10):
     """create outlines of the circular masks used to extract relevant regions
 
-    this does basically the same thing as `create_circle_masks` but returns a list of indices into
+    this does basically the same thing as `create_square_masks` but returns a list of indices into
     the image, so they can be plotted on the image to double-check that things look good (use
-    `check_circle_outlines` to do so).
+    `check_square_outlines` to do so).
 
     the higher the value of edge_tol, the more points we'll find.
     """
     xgrid, ygrid = np.meshgrid(range(img_shape[1]), range(img_shape[0]))
     grating_mask = np.zeros(img_shape)
-    grating_mask[np.abs((xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 - grating_radius**2) < edge_tol] = 1
+    grating_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - grating_radius) < edge_tol] = 1
     white_mask = np.zeros(img_shape)
-    white_mask[np.abs((xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 - (grating_radius+border_ring_width)**2) < edge_tol] = 1
+    white_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - (grating_radius+border_ring_width)) < edge_tol] = 1
     black_mask = np.zeros(img_shape)
-    black_mask[np.abs((xgrid - circle_ctr_x)**2 + (ygrid - circle_ctr_y)**2 - (grating_radius+2*border_ring_width)**2) < edge_tol] = 1
+    black_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - (grating_radius+2*border_ring_width)) < edge_tol] = 1
     return np.where(grating_mask), np.where(white_mask), np.where(black_mask)
 
 
-def check_circle_outlines(img, grating_mask_pts, white_mask_pts, black_mask_pts, zoom=1):
+def check_square_outlines(img, grating_mask_pts, white_mask_pts, black_mask_pts, zoom=1):
     pts = [np.array(p) for p in [grating_mask_pts, white_mask_pts, black_mask_pts]]
     return _plot_pts_on_img(img, pts, zoom)
 
@@ -325,3 +342,13 @@ def extract_1d_grating(img, grating_mask):
     grating_1d = np.nanmean(grating, 0)
     grating_1d = grating_1d[~np.isnan(grating_1d)]
     return grating_1d
+
+
+def find_corresponding_blank(fname_stem):
+    """this finds the filename of the blank image that corresponds to the specified image
+    """
+    df = pd.DataFrame(camera_data.IMG_INFO).T.rename(columns={0: 'context', 1: 'content'})
+    df = df[(df.context==df.loc[fname_stem].context)&(df.content=='blank')]
+    if len(df) > 1:
+        raise Exception("Too many blank images have the same context as %s" % fname_stem)
+    return df.index[0]

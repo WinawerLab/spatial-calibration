@@ -135,7 +135,7 @@ def luminance_image(standard_rgb_img, rgb_to_lms, scaling_factor=1., lms_to_lum=
                                         standard_rgb_img.transpose(1,0,2)))
 
 
-def _find_circles(X, grating_edge, white_edge, black_edge):
+def _find_squares(X, grating_edge, white_edge, black_edge):
     """find the distance from optimal we are for our given parameters X
 
     because of how scipy.optimize works, all the parameters to optimize have to be included in one
@@ -144,15 +144,15 @@ def _find_circles(X, grating_edge, white_edge, black_edge):
     x0, y0, r_grating, border_ring_width = X
     vals = []
     for x, y in grating_edge:
-        vals.append((x0 - x)**2 + (y0 - y)**2 - r_grating**2)
+        vals.append(utils._square_eqt(x, y, x0, y0) - r_grating)
     for x, y in white_edge:
-        vals.append((x0 - x)**2 + (y0 - y)**2 - (r_grating + border_ring_width)**2)
+        vals.append(utils._square_eqt(x, y, x0, y0) - (r_grating + border_ring_width))
     for x, y in black_edge:
-        vals.append((x0 - x)**2 + (y0 - y)**2 - (r_grating + 2*border_ring_width)**2)
+        vals.append(utils._square_eqt(x, y, x0, y0) - (r_grating + 2*border_ring_width))
     return vals
 
 
-def _get_initial_guess(circle_ctr, grating_edge, white_edge, black_edge):
+def _get_initial_guess(square_ctr, grating_edge, white_edge, black_edge):
     """get an initial guess for the parameters
 
     this just converts from the values in pts_dict to the parameters we use to optimize.
@@ -161,16 +161,16 @@ def _get_initial_guess(circle_ctr, grating_edge, white_edge, black_edge):
     for edge in [grating_edge, white_edge, black_edge]:
         if type(edge) is list:
             edge = edge[0]
-        rs.append(np.sqrt((circle_ctr[0] - edge[0])**2 + (circle_ctr[1]-edge[1])**2))
-    return circle_ctr[0], circle_ctr[1], rs[0], np.mean(rs[1:]) - rs[0]
+        rs.append(utils._square_eqt(edge[0], edge[1], square_ctr[0], square_ctr[1]))
+    return square_ctr[0], square_ctr[1], rs[0], np.mean(rs[1:]) - rs[0]
 
 
-def find_mask_params(circle_ctr, grating_edge, white_edge, black_edge):
+def find_mask_params(square_ctr, grating_edge, white_edge, black_edge):
     """find the parameters we can use to define region-defining masks
 
     given the points provided by the user, we use scipy.optimize to find the center of the circular
     region containing the grating (x0, y0), the diameter of the grating (r_grating), and the width
-    of each of the two border rings (border_ring_width). we do this using _find_circles, which
+    of each of the two border rings (border_ring_width). we do this using _find_squares, which
     tries to find those parameters such that we minimize the difference between $(x0 - x)^2 + (y0 -
     y)^2 - r^2$, for the corresponding (x, y) and r for each ring (edge of the grating, edge of the
     white border region, edge of the black border region); note that (x0, y0) is shared for all of
@@ -178,17 +178,114 @@ def find_mask_params(circle_ctr, grating_edge, white_edge, black_edge):
 
     this works best when your picture is taken straight-on from the image; the farther you are from
     this ideal, the worse this will perform (because the grating then won't actually fall in a
-    circle in the image)
+    square in the image)
 
     returns: x0, y0, r_grating, border_ring_width
     """
-    res = optimize.least_squares(_find_circles, _get_initial_guess(circle_ctr, grating_edge,
+    res = optimize.least_squares(_find_squares, _get_initial_guess(square_ctr, grating_edge,
                                                                    white_edge, black_edge),
                                  args=(grating_edge, white_edge, black_edge))
     return res.x
 
 
-def calculate_contrast(image):
+def run_fft(grating_1d):
+    """run the fft, returning power, amplitude, fft, and frequencies
+
+    grating_1d should be a 1d array
+
+    this normalizes the grating by its mean and the fft by its length, so that the value of the DC
+    component is 1.
+    """
+    freqs = np.fft.fftshift(np.fft.fftfreq(len(grating_1d),))
+    fft = np.fft.fftshift(np.fft.fft(grating_1d / grating_1d.mean()))
+    fft /= len(fft)
+
+    amp = np.abs(fft)
+
+    return amp, fft, freqs    
+
+
+def check_filtering(grating_1d, filtered_grating_1d, normalized_contrast):
+    """plot
+    """
+    plt.figure(figsize=(25, 5))
+    plt.plot(grating_1d)
+    plt.title('1d grating')
+    
+    plt.figure(figsize=(25, 5))
+    plt.plot(filtered_grating_1d)
+    plt.title('Filtered fundamental')
+    
+    print("Square-wave contrast: %s" % normalized_contrast)
+
+
+def fourier_contrast(grating_1d, n_phases=20, plot_flag=True):
+    """calculate the contrast of the specified grating
+
+    following the procedure used by Tkacik et al, we try several different phase crops of the
+    grating, dropping the first range(n_phases) points, and seeing which phase has the highest
+    power (across all frequencies). we crop to this phase, then find the frequency that has the
+    most power (ignoring the DC component) and filter out all other frequencies. we use this
+    filtered grating to compute the Michelson contrast of this filtered grating
+
+    returns: filtered grating, contrast of the fundamental, normalized contrast (of the
+    square-wave), and the frequency at which the max power is reached
+    """
+    amps = {}
+    for phase in range(n_phases):
+        amp, fft, freqs = run_fft(grating_1d[phase:])
+        amp[freqs==0] = 0
+        amps[phase] = np.max(amp)
+        
+    max_phase = max(amps, key=lambda key: amps[key])
+    amp, fft, freqs = run_fft(grating_1d[max_phase:])
+    
+    # since this comes from a real signal, we know the fft is symmetric (if it's not exactly
+    # symmetric for some reason, that's because of a precision error), so we just drop the negative
+    # frequencies and double the positive ones (except the DC and highest frequency components,
+    # which correspond to each other). we do this for the amplitude, since that's what we'll use to
+    # get the contrast, but not for the fft, since we use that to reconstruct the filtered signal.
+    amp = amp[freqs>=0]
+    amp[1:-1] = 2*amp[1:-1]
+
+    if plot_flag:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+        ax.stem(freqs[freqs>=0], amp)
+        ax.set_title('Amplitude')
+
+    amp[freqs[freqs>=0]==0] = 0
+    amp_argmax = np.argmax(amp)
+    contrast = amp[amp_argmax]
+    # contrast is the contrast of the fundamental; in order to get the contrast of the square-wave
+    # it came from, we have to multiply it by pi / 4, see
+    # http://mathworld.wolfram.com/FourierSeriesSquareWave.html for an explanation
+    normalized_contrast = contrast * np.pi / 4
+
+    freq_max = freqs[freqs>=0][amp_argmax]
+    freq_argmax = np.array([np.argwhere(freqs==freq_max)[0],
+                            np.argwhere(freqs==-freq_max)[0]])
+
+    if plot_flag:
+        print("Max phase crop: %s" % max_phase)
+        print("Max frequency:\n %s\n" % freq_max)
+        print("Amplitude at max frequency:\n %s\n" % amp[amp_argmax])
+
+    filtered_fft = np.zeros(len(fft), dtype=np.complex)
+    filtered_fft[np.argwhere(freqs==0)] = fft[np.argwhere(freqs==0)]
+    filtered_fft[freq_argmax] = fft[freq_argmax]
+
+    filtered_grating_1d = np.fft.ifft(np.fft.ifftshift(filtered_fft)) * len(fft)
+    # if we did everything right, this should have zero imaginary components
+    assert np.allclose(np.imag(filtered_grating_1d), np.zeros(len(fft))), "Something went wrong, the reconstructed grating is complex!"
+    filtered_grating_1d = np.real(filtered_grating_1d) * grating_1d.mean()
+
+    if plot_flag:
+        check_filtering(grating_1d, filtered_grating_1d, normalized_contrast)
+    
+    return filtered_grating_1d, contrast, normalized_contrast, freq_max
+
+
+def rms_contrast(image):
     """calculate the RMS contrast of the specified image
 
     RMS contrast is the standard deviation of the values in the image divided by the mean of the
@@ -223,18 +320,18 @@ def get_frequency(image, metadata, grating_mask, white_mask, black_mask, x0, y0)
     return grating_freq, border_freq
 
 
-def main(fname, preprocess_type):
-    """calculate the contrast, doing all of the steps in between
-
-    see the MTF notebook to see this calculation stepped through one step at a time
+def create_luminance_image(fname, preprocess_type):
+    """creates the luminance image, doing everything from the beginning to that
 
     fname: str, the path to the NEF file to analyze
+
+    returns luminance image
     """
     if not fname.endswith(".NEF"):
         raise Exception("Must pass in the NEF image! %s" % fname)
     save_stem = os.path.splitext(fname.replace("raw", os.path.join("%s", "{preprocess_type}")))[0]
     save_stem = save_stem.format(preprocess_type=preprocess_type)
-    for deriv in ['luminance', 'mask_check', 'preprocessed']:
+    for deriv in ['luminance', 'mask_check', 'preprocessed', 'corrected_luminance']:
         if not os.path.isdir(os.path.dirname(save_stem % deriv)):
             os.makedirs(os.path.dirname(save_stem % deriv))
     utils.preprocess_image(fname, preprocess_type)
@@ -253,6 +350,22 @@ def main(fname, preprocess_type):
     scaling_factor = calculate_conversion_matrix_scaling_factor(rgb_to_lms)
     lum_image = luminance_image(standard_RGB, rgb_to_lms, scaling_factor)
     imageio.imsave(save_stem % 'luminance' + "_lum.png", lum_image)
+    return lum_image, metadata, save_stem, demosaiced_image, standard_RGB
+
+
+def main(fname, preprocess_type, blank_lum_image=None):
+    """calculate the contrast, doing all of the steps in between
+
+    see the MTF notebook to see this calculation stepped through one step at a time
+
+    fname: str, the path to the NEF file to analyze
+
+    blank_lum_image: 2d numpy array, optional. If set, will divide the luminance image created
+    during this function element-wise by this array. Should do this in order to counter-act any
+    variations in luminance across the screen (for example, if the luminance is highest in the
+    center of the screen)
+    """
+    lum_image, metadata, save_stem, demosaiced_image, standard_RGB = create_luminance_image(fname, preprocess_type)
     try:
         pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
     except KeyError:
@@ -263,18 +376,41 @@ def main(fname, preprocess_type):
         fig.savefig(save_stem % 'mask_check' + "_pts.png", dpi=96)
         plt.close(fig)
         x0, y0, r_grating, border_ring_width = find_mask_params(**pts_dict)
-        grating_mask, white_mask, black_mask = utils.create_circle_masks(lum_image.shape, x0, y0,
+        grating_mask, white_mask, black_mask = utils.create_square_masks(lum_image.shape, x0, y0,
                                                                          r_grating, border_ring_width)
         fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])    
         fig.savefig(save_stem % 'mask_check' + "_masks.png")
         plt.close(fig)
-        grating_contrast = calculate_contrast(lum_image[grating_mask])
+        grating_rms = rms_contrast(lum_image[grating_mask])
         # since the masks are boolean, we can simply sum them to get the union
-        border_contrast = calculate_contrast(lum_image[white_mask+black_mask])
-        grating_freq, border_freq = get_frequency(lum_image, metadata, grating_mask, white_mask,
+        border_rms = rms_contrast(lum_image[white_mask+black_mask])
+        grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
+        border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
+        _, _, grating_fourier_contrast, grating_fourier_freq = fourier_contrast(grating_1d,
+                                                                                plot_flag=False)
+        _, _, border_fourier_contrast, border_fourier_freq = fourier_contrast(border,
+                                                                              plot_flag=False)
+        # we also want the corrected contrast
+        if blank_lum_image is not None:
+            lum_image_corrected = lum_image / blank_lum_image
+            imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
+            grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
+            border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
+            grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask)
+            border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0)
+            _, _, grating_fourier_corrected, _ = fourier_contrast(grating_1d, plot_flag=False)
+            _, _, border_fourier_corrected, _ = fourier_contrast(border, plot_flag=False)
+        else:
+            grating_rms_corrected = None
+            border_rms_corrected = None
+            grating_fourier_corrected = None
+            border_fourier_corrected = None
+        grating_rms_freq, border_rms_freq = get_frequency(lum_image, metadata, grating_mask, white_mask,
                                                   black_mask, x0, y0)
-        return (grating_freq, grating_contrast, border_freq, border_contrast, metadata,
-                demosaiced_image, standard_RGB, lum_image)
+        return (grating_rms_freq, grating_rms, grating_rms_corrected, grating_fourier_freq,
+                grating_fourier_contrast, grating_fourier_corrected, border_rms_freq,
+                border_rms, border_rms_corrected, border_fourier_freq, border_fourier_contrast,
+                border_fourier_corrected, metadata, demosaiced_image, standard_RGB, lum_image)
 
 
 def mtf(fnames, force_run=False):
@@ -289,9 +425,13 @@ def mtf(fnames, force_run=False):
         fnames = [fnames]
     # construct the list of tuples (raw_image_filename, preproc_type) to analyze. we make it a list
     # so we can iterate through it multiple times.
-    tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic', 'nikon_demosaic',
-                                                        'dcraw_vng_demosaic', 'dcraw_ahd_demosaic']))
-    grating_freqs, grating_contrasts, border_freqs, border_contrasts = [], [], [], []
+    tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic', 'dcraw_vng_demosaic',
+                                                        'dcraw_ahd_demosaic']))
+    tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic']))
+    grating_freqs, grating_rms, border_freqs, border_rms = [], [], [], []
+    grating_rms_corrected, border_rms_corrected = [], []
+    grating_freqs_fourier, grating_fourier, border_freqs_fourier, border_fourier = [], [], [], []
+    grating_fourier_corrected, border_fourier_corrected = [], []
     # context is what the image was presented on, content is how many cycles are in the image
     content, context = [], []
     # we also want to keep some information about our calculated luminance and other images
@@ -308,7 +448,7 @@ def mtf(fnames, force_run=False):
         tmp = []
         for f, preproc in tuples_to_analyze:
             # then this exact pair is not in orig_df and so we should analyze it. we use isin
-            # instead of == because isin will work for the emptydataframe as well
+            # instead of == because isin will work for the empty dataframe as well
             if orig_df[(orig_df.filenames.isin([f])) & (orig_df.preprocess_type.isin([preproc]))].empty:
                 tmp.append((f, preproc))
         tuples_to_analyze= tmp
@@ -323,14 +463,30 @@ def mtf(fnames, force_run=False):
         print("No new images to analyze, exiting...")
         return
     fnames = []
+    blank_lum_imgs = {}
     for f, preproc in tuples_to_analyze:
         print("Analyzing %s with preproc method %s" % (f, preproc))
-        gf, gc, rf, rc, meta, demosaic, std, lum = main(f, preproc)
+        f_stem = os.path.splitext(os.path.split(f)[-1])[0]
+        blank_lum_name = utils.find_corresponding_blank(f_stem)
+        if (blank_lum_name, preproc) not in blank_lum_imgs.keys():
+            blank_fullname = os.path.join(os.path.split(f)[0], blank_lum_name) + '.NEF'
+            blank_lum_imgs[(blank_lum_name, preproc)], _, _, _, _ = create_luminance_image(blank_fullname,
+                                                                                           preproc)
+        blank = blank_lum_imgs[(blank_lum_name, preproc)]
+        gf, gc, gcc, gff, gfc, gfcc, bf, bc, bcc, bff, bfc, bfcc, meta, demosaic, std, lum = main(f, preproc, blank)
         if gc is not None:
             grating_freqs.append(np.abs(gf))
-            border_freqs.append(np.abs(rf))
-            grating_contrasts.append(gc)
-            border_contrasts.append(rc)
+            border_freqs.append(np.abs(bf))
+            grating_rms.append(gc)
+            border_rms.append(bc)
+            grating_rms_corrected.append(gcc)
+            border_rms_corrected.append(bcc)
+            grating_freqs_fourier.append(np.abs(gff))
+            border_freqs_fourier.append(np.abs(bff))
+            grating_fourier.append(gfc)
+            border_fourier.append(bfc)
+            grating_fourier_corrected.append(gfcc)
+            border_fourier_corrected.append(bfcc)
             content.append(meta['content'])
             context.append(meta['context'])
             demosaic_mean.append(demosaic.mean())
@@ -346,12 +502,20 @@ def mtf(fnames, force_run=False):
             f_number.append(meta['f_number'])
             exposure_time.append(meta['exposure_time'])
             preprocess_types.append(preproc)
-            fnames.append(f)
+            fnames.append(f_stem)
     # is there a better way to construct this dataframe? almost certainly, but this does what I
     # want it to do
     df = pd.DataFrame(
-        {'grating_frequencies': grating_freqs, 'grating_contrasts': grating_contrasts,
-         'border_frequencies': border_freqs, 'border_contrasts': border_contrasts, 'filenames': fnames,
+        {'grating_rms_frequencies': grating_freqs, 'grating_rms_contrasts': grating_rms,
+         'grating_rms_contrasts_corrected': grating_rms_corrected,
+         'border_rms_frequencies': border_freqs, 'border_rms_contrasts': border_rms,
+         'border_rms_contrasts_corrected': border_rms_corrected,
+         'grating_fourier_frequencies': grating_freqs_fourier,
+         'grating_fourier_contrasts': grating_fourier,
+         'grating_fourier_contrasts_corrected': grating_fourier_corrected,
+         'border_fourier_frequencies': border_freqs_fourier,
+         'border_fourier_contrasts': border_fourier,
+         'border_fourier_contrasts_corrected': border_fourier_corrected, 'filenames': fnames,
          'image_content': content, 'image_context': context, 'luminance_mean': lum_mean,
          'luminance_min': lum_min, 'luminance_max': lum_max, 'std_RGB_mean': std_mean,
          'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso, 'f_number': f_number,
@@ -363,15 +527,23 @@ def mtf(fnames, force_run=False):
         tmp = df[['image_content', 'image_context', 'iso', 'f_number', 'exposure_time',
                   'luminance_mean', 'luminance_min', 'luminance_max', 'demosaiced_mean',
                   'demosaiced_min', 'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max',
-                  'filenames', '%s_frequencies' % name, '%s_contrasts' % name, 'preprocess_type']]
-        tmp = tmp.rename(columns={'%s_frequencies'%name: 'frequency',
-                                  '%s_contrasts'%name: 'contrast'})
+                  'filenames', '%s_rms_frequencies' % name, '%s_rms_contrasts' % name,
+                  '%s_rms_contrasts_corrected' % name, '%s_fourier_frequencies' % name,
+                  '%s_fourier_contrasts' % name, '%s_fourier_contrasts_corrected' % name,
+                  'preprocess_type']]
+        tmp = tmp.rename(columns={'%s_rms_frequencies'%name: 'rms_frequency',
+                                  '%s_rms_contrasts'%name: 'rms_contrast',
+                                  '%s_rms_contrasts_corrected'%name: 'lum_corrected_rms_contrast',
+                                  '%s_fourier_frequencies'%name: 'fourier_frequency',
+                                  '%s_fourier_contrasts'%name: 'fourier_contrast',
+                                  '%s_fourier_contrasts_corrected'%name: 'lum_corrected_fourier_contrast'})
         tmp['grating_type'] = name
         tmps.append(tmp)
     df = pd.concat(tmps)
     if orig_df is not None:
         df = pd.concat([orig_df, df])
-    df = df.reset_index()
+    df = df.reset_index(drop=True)
+    df['image_cycles'] = df.image_content.apply(lambda x: int(x.replace(' cyc/image', '')))
     df.to_csv("mtf.csv", index=False)
     return df
 
