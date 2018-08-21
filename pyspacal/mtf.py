@@ -526,21 +526,18 @@ def mtf(fnames, force_run=False):
          'demosaiced_min': demosaic_min, 'demosaiced_max': demosaic_max,
          'preprocess_type': preprocess_types})
     tmps = []
-    for name in ['grating', 'border']:
+    for name, contrast in itertools.product(['grating', 'border'], ['rms', 'fourier']):
         tmp = df[['image_content', 'image_context', 'iso', 'f_number', 'exposure_time',
                   'luminance_mean', 'luminance_min', 'luminance_max', 'demosaiced_mean',
                   'demosaiced_min', 'demosaiced_max', 'std_RGB_mean', 'std_RGB_min', 'std_RGB_max',
-                  'filenames', '%s_rms_frequencies' % name, '%s_rms_contrasts' % name,
-                  '%s_rms_contrasts_corrected' % name, '%s_fourier_frequencies' % name,
-                  '%s_fourier_contrasts' % name, '%s_fourier_contrasts_corrected' % name,
-                  'preprocess_type']]
-        tmp = tmp.rename(columns={'%s_rms_frequencies'%name: 'rms_frequency',
-                                  '%s_rms_contrasts'%name: 'rms_contrast',
-                                  '%s_rms_contrasts_corrected'%name: 'lum_corrected_rms_contrast',
-                                  '%s_fourier_frequencies'%name: 'fourier_frequency',
-                                  '%s_fourier_contrasts'%name: 'fourier_contrast',
-                                  '%s_fourier_contrasts_corrected'%name: 'lum_corrected_fourier_contrast'})
+                  'filenames', '%s_%s_frequencies' % (name, contrast),
+                  '%s_%s_contrasts' % (name, contrast),
+                  '%s_%s_contrasts_corrected' % (name, contrast), 'preprocess_type']]
+        tmp = tmp.rename(columns={'%s_%s_frequencies'%(name, contrast): 'frequency',
+                                  '%s_%s_contrasts'%(name, contrast): 'contrast',
+                                  '%s_%s_contrasts_corrected'%(name, contrast): 'lum_corrected_contrast'})
         tmp['grating_type'] = name
+        tmp['contrast_type'] = contrast
         tmps.append(tmp)
     df = pd.concat(tmps)
     if orig_df is not None:
