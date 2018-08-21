@@ -370,7 +370,8 @@ def main(fname, preprocess_type, blank_lum_image=None):
         pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
     except KeyError:
         warnings.warn("Can't find points for %s, please add them!" % fname)
-        return None, None, None, None, None, None, None, None
+        return (None, None, None, None, None, None, None, None, None, None, None, None, None,
+                None, None, None)
     else:
         fig = utils.check_pts_dict(lum_image, pts_dict)
         fig.savefig(save_stem % 'mask_check' + "_pts.png", dpi=96)
@@ -427,7 +428,6 @@ def mtf(fnames, force_run=False):
     # so we can iterate through it multiple times.
     tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic', 'dcraw_vng_demosaic',
                                                         'dcraw_ahd_demosaic']))
-    tuples_to_analyze = list(itertools.product(fnames, ['no_demosaic']))
     grating_freqs, grating_rms, border_freqs, border_rms = [], [], [], []
     grating_rms_corrected, border_rms_corrected = [], []
     grating_freqs_fourier, grating_fourier, border_freqs_fourier, border_fourier = [], [], [], []
@@ -465,8 +465,11 @@ def mtf(fnames, force_run=False):
     fnames = []
     blank_lum_imgs = {}
     for f, preproc in tuples_to_analyze:
-        print("Analyzing %s with preproc method %s" % (f, preproc))
         f_stem = os.path.splitext(os.path.split(f)[-1])[0]
+        if (f_stem, preproc) in blank_lum_imgs.keys():
+            print("%s is a blank image, skipping..." % f)
+            continue
+        print("Analyzing %s with preproc method %s" % (f, preproc))
         blank_lum_name = utils.find_corresponding_blank(f_stem)
         if (blank_lum_name, preproc) not in blank_lum_imgs.keys():
             blank_fullname = os.path.join(os.path.split(f)[0], blank_lum_name) + '.NEF'
