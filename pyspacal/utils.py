@@ -93,6 +93,7 @@ def load_img_with_metadata(raw_fname, preprocess_type):
                 'preprocess_type': preprocess_type}
     metadata['context'] = camera_data.IMG_INFO[metadata['filename']][0]
     metadata['content'] = camera_data.IMG_INFO[metadata['filename']][1]
+    metadata['direction'] = camera_data.IMG_INFO[metadata['filename']][2]
     img = find_preprocessed_file(raw_fname, preprocess_type)
     return img, metadata
 
