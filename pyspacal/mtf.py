@@ -394,6 +394,10 @@ def main(fname, preprocess_type, blank_lum_image=None):
         # we also want the corrected contrast
         if blank_lum_image is not None:
             lum_image_corrected = lum_image / blank_lum_image
+            # in some rare cases, there's a 0 in blank_lum_image where there's not a zero in
+            # lum_image, which gives an infinity. I'm not sure what to do with that, so throw it to
+            # 0
+            lum_image_corrected[np.isinf(lum_image_corrected)] = 0
             imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
             grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
             border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
