@@ -339,10 +339,13 @@ def extract_1d_border(img, white_mask, black_mask, x0, y0):
     return ring
 
 
-def extract_1d_grating(img, grating_mask):
+def extract_1d_grating(img, grating_mask, direction):
     grating = img * grating_mask
     grating[grating==0] = np.nan
-    grating_1d = np.nanmean(grating, 0)
+    if direction == 'vertical':
+        grating_1d = np.nanmean(grating, 0)
+    elif direction == 'horizontal':
+        grating_1d = np.nanmean(grating, 1)
     grating_1d = grating_1d[~np.isnan(grating_1d)]
     return grating_1d
 

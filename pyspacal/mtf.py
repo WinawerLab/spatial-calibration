@@ -312,7 +312,7 @@ def get_frequency(image, metadata, grating_mask, white_mask, black_mask, x0, y0)
     image metadata) and the border (which is 1), so we only need to find the length of the signals
     in order to get the frequency
     """
-    grating_1d = utils.extract_1d_grating(image, grating_mask)
+    grating_1d = utils.extract_1d_grating(image, grating_mask, metadata['direction'])
     border_1d = utils.extract_1d_border(image, white_mask, black_mask, x0, y0)
     # this converts a string of the format "32 cyc/image" into the integer 32
     grating_freq = _calc_freq(grating_1d, int(metadata['content'].split(' ')[0]))
@@ -385,7 +385,7 @@ def main(fname, preprocess_type, blank_lum_image=None):
         grating_rms = rms_contrast(lum_image[grating_mask])
         # since the masks are boolean, we can simply sum them to get the union
         border_rms = rms_contrast(lum_image[white_mask+black_mask])
-        grating_1d = utils.extract_1d_grating(lum_image, grating_mask)
+        grating_1d = utils.extract_1d_grating(lum_image, grating_mask, metadata['direction'])
         border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
         _, _, grating_fourier_contrast, grating_fourier_freq = fourier_contrast(grating_1d,
                                                                                 plot_flag=False)
@@ -401,7 +401,8 @@ def main(fname, preprocess_type, blank_lum_image=None):
             imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
             grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
             border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
-            grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask)
+            grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask,
+                                                  metadata['direction'])
             border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0)
             _, _, grating_fourier_corrected, _ = fourier_contrast(grating_1d, plot_flag=False)
             _, _, border_fourier_corrected, _ = fourier_contrast(border, plot_flag=False)
