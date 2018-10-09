@@ -9,6 +9,7 @@ import matplotlib
 # unnecessarily alarming, so we hide it.
 matplotlib.use('SVG', warn=False)
 import os
+import argparse
 import glob
 import shutil
 import subprocess
@@ -353,3 +354,16 @@ def find_corresponding_blank(fname_stem):
     if len(df) > 1:
         raise Exception("Too many blank images have the same context as %s" % fname_stem)
     return df.index[0]
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("Preprocess images in specified way.")
+    parser.add_argument("images", nargs='+',
+                        help=("What images to preprocess"))
+    parser.add_argument("--preprocess_type", "-p",
+                        help=("{no_demosaic, dcraw_vng_demosaic, dcraw_ahd_demosaic}. What "
+                              "preprocessing method to use."))
+    args = vars(parser.parse_args())
+    for im in args['images']:
+        preprocess_image(im, args['preprocess_type'])
+    
