@@ -437,8 +437,8 @@ def mtf(fnames, force_run=False):
     grating_freqs_fourier, grating_fourier, border_freqs_fourier, border_fourier = [], [], [], []
     grating_fourier_corrected, border_fourier_corrected = [], []
     # context is what the image was presented on, content is how many cycles are in the image,
-    # direction is what direction (vertical/horizontal)
-    content, context, direction = [], [], []
+    # direction is what direction (vertical/horizontal), size_pix is size of grating in pixels
+    content, context, direction, size_pix = [], [], [], []
     # we also want to keep some information about our calculated luminance and other images
     lum_mean, lum_min, lum_max = [], [], []
     demosaic_mean, demosaic_min, demosaic_max = [], [], []
@@ -498,6 +498,7 @@ def mtf(fnames, force_run=False):
             content.append(meta['content'])
             context.append(meta['context'])
             direction.append(meta['direction'])
+            size_pix.append(meta['size'])
             demosaic_mean.append(demosaic.mean())
             demosaic_min.append(demosaic.min())
             demosaic_max.append(demosaic.max())
@@ -523,9 +524,9 @@ def mtf(fnames, force_run=False):
          'grating_fourier_contrasts': grating_fourier,
          'grating_fourier_contrasts_corrected': grating_fourier_corrected,
          'border_fourier_frequencies': border_freqs_fourier,
-         'border_fourier_contrasts': border_fourier,
+         'border_fourier_contrasts': border_fourier, 'grating_size': size_pix,
          'border_fourier_contrasts_corrected': border_fourier_corrected, 'filenames': fnames,
-         'image_content': content, 'image_context': context, 'grating_direction': direction,
+         'image_content': content, 'image_context': context, 'grating_direction': direction, 
          'luminance_mean': lum_mean, 'luminance_min': lum_min, 'luminance_max': lum_max,
          'std_RGB_mean': std_mean, 'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso,
          'f_number': f_number, 'exposure_time': exposure_time, 'demosaiced_mean': demosaic_mean,
@@ -536,7 +537,7 @@ def mtf(fnames, force_run=False):
         tmp = df[['image_content', 'image_context', 'grating_direction', 'iso', 'f_number',
                   'exposure_time', 'luminance_mean', 'luminance_min', 'luminance_max',
                   'demosaiced_mean', 'demosaiced_min', 'demosaiced_max', 'std_RGB_mean',
-                  'std_RGB_min', 'std_RGB_max', 'filenames',
+                  'std_RGB_min', 'std_RGB_max', 'filenames', 'grating_size',
                   '%s_%s_frequencies' % (name, contrast), '%s_%s_contrasts' % (name, contrast),
                   '%s_%s_contrasts_corrected' % (name, contrast), 'preprocess_type']]
         tmp = tmp.rename(columns={'%s_%s_frequencies'%(name, contrast): 'frequency',
@@ -550,6 +551,7 @@ def mtf(fnames, force_run=False):
         df = pd.concat([orig_df, df])
     df = df.reset_index(drop=True)
     df['image_cycles'] = df.image_content.apply(lambda x: int(x.replace(' cyc/image', '')))
+    df['display_freq'] = df.apply(lambda x: x.image_cycles / int(x.grating_size.replace(' pix', '')), 1)
     df.to_csv("mtf.csv", index=False)
     return df
 
