@@ -4,6 +4,7 @@
 
 import argparse
 from psychopy import visual, event, monitors
+from psychopy.tools import imagetools
 import numpy as np
 from scipy import signal
 
@@ -16,8 +17,6 @@ def create_stimuli_set(img_size=512):
     """create the stimuli set we want to use
     """
     num_freqs = int(np.floor(np.log2(np.min(img_size)))) - 1
-    print("Stimuli will contain %s pixels, gratings will be %s pixels wide" % (img_size,
-                                                                               img_size//2))
     x = np.arange(-img_size//2, img_size//2)
     x, y = np.meshgrid(x, x)
     # our very last stimulus is just blank, so it will show mid-gray
@@ -50,7 +49,8 @@ def create_stimuli_set(img_size=512):
     return im
 
 
-def test_display(screen_size, monitor_name='vpixx', img_size=512, screen_num=1):
+def test_display(screen_size, stim_path=None, monitor_name='vpixx', img_size=512, screen_num=1,
+                 show_every=1):
     """create a psychopy window and display some stimuli
     """
     if not hasattr(screen_size, "__iter__") or len(screen_size) == 1:
@@ -60,7 +60,13 @@ def test_display(screen_size, monitor_name='vpixx', img_size=512, screen_num=1):
             screen_size = [screen_size, screen_size]
     assert img_size < screen_size[0], "Can't show larger image than the screen!"
     assert img_size < screen_size[1], "Can't show larger image than the screen!"
-    stimuli = create_stimuli_set(img_size)
+    if stim_path is None:
+        stimuli = create_stimuli_set(img_size)
+        print("Stimuli will contain %s pixels, gratings will be %s pixels wide" % (stimuli.shape[1],
+                                                                                   stimuli.shape[1]//2))
+    else:
+        stimuli = np.load(stim_path)
+        print("Stimuli loaded in from %s" % stim_path)
     win = visual.Window(screen_size, fullscr=True, screen=screen_num, colorSpace='rgb255',
                         color=127, units='pix')
     mon = monitors.Monitor(monitor_name)
@@ -80,8 +86,12 @@ def test_display(screen_size, monitor_name='vpixx', img_size=512, screen_num=1):
     if 'q' in [k[0] for k in all_keys] or 'escape' in [k[0] for k in all_keys]:
         win.close()
         return
-    for i in range(len(stimuli)):
-        thing_to_display = visual.ImageStim(win, stimuli[i], size=stimuli.shape[1:])
+    for i in range(0, len(stimuli), show_every):
+        if stim_path is None:
+            thing_to_display = visual.ImageStim(win, stimuli[i], size=stimuli.shape[1:])
+        else:
+            thing_to_display = visual.ImageStim(win, imagetools.array2image(stimuli[i]),
+                                                size=stimuli.shape[1:])
         thing_to_display.draw()
         win.flip()
         all_keys = event.waitKeys()
@@ -103,5 +113,12 @@ if __name__ == '__main__':
                         help="Image size, in pixels. Must be one integer", type=int)
     parser.add_argument("--screen_num", "-s", type=int, default=1,
                         help="Which screen to display the images on")
+    parser.add_argument("--stim_path", '-p',
+                        help=("Optional. Path to .npy file with stimuli to display. If not set, "
+                              "will create default set of images. If set, assumes values run from"
+                              "0 to 255 (instead of -1 to 1) and will thus call "
+                              "psychopy.tools.imagetools.array2image on each image"))
+    parser.add_argument('--show_every', '-n', default=1, type=int,
+                        help=("Show every `show_every` stimuli"))
     args = vars(parser.parse_args())
     test_display(**args)
