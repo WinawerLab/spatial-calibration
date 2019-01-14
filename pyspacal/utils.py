@@ -37,7 +37,6 @@ def _get_preprocessed_fname(raw_fname, preprocess_type):
     """
     preprocessed_fname = raw_fname.replace('raw', os.path.join("preprocessed",  preprocess_type))
     return os.path.splitext(preprocessed_fname)[0]
-    
 
 
 def preprocess_image(raw_fname, preprocess_type):
@@ -48,13 +47,13 @@ def preprocess_image(raw_fname, preprocess_type):
     except Exception:
         preprocessed_fname = _get_preprocessed_fname(raw_fname, preprocess_type)
         if preprocess_type == 'no_demosaic':
-            subprocess.call(['dcraw', '-4', '-d', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-d', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".pgm", preprocessed_fname + ".pgm")
         elif preprocess_type == 'dcraw_vng_demosaic':
-            subprocess.call(['dcraw', '-4', '-q', '1', '-T', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-q', '1', '-T', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
         elif preprocess_type == 'dcraw_ahd_demosaic':
-            subprocess.call(['dcraw', '-4', '-q', '3', '-T', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-q', '3', '-T', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
         elif preprocess_type == 'nikon_demosaic':
             raise Exception("Cannot find nikon_demosaic preprocessed image and cannot create it"
@@ -363,11 +362,11 @@ def find_corresponding_blank(fname_stem):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Preprocess images in specified way.")
     parser.add_argument("images", nargs='+',
-                        help=("What images to preprocess"))
+                        help=("What images to preprocess. We can only preprocess raw images "
+                              "(no JPGS)"))
     parser.add_argument("--preprocess_type", "-p",
                         help=("{no_demosaic, dcraw_vng_demosaic, dcraw_ahd_demosaic}. What "
                               "preprocessing method to use."))
     args = vars(parser.parse_args())
     for im in args['images']:
         preprocess_image(im, args['preprocess_type'])
-    
