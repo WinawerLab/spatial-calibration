@@ -438,7 +438,7 @@ def main(fname, preprocess_type, blank_lum_image=None):
                 border_fourier_corrected, metadata, demosaiced_image, standard_RGB, lum_image)
 
 
-def mtf(fnames, force_run=False):
+def mtf(fnames, force_run=False, save_path='mtf.csv'):
     """run the entire MTF calculation
 
     we only re-run this on the images that have not already been analyzed. to over-rule that
@@ -466,7 +466,7 @@ def mtf(fnames, force_run=False):
     # and the metadata
     iso, f_number, exposure_time, preprocess_types = [], [], [], []
     try:
-        orig_df = pd.read_csv('mtf.csv')
+        orig_df = pd.read_csv(save_path)
     except FileNotFoundError:
         orig_df = pd.DataFrame({'filenames': [], 'preprocess_type': []})
     if not force_run:
@@ -572,7 +572,7 @@ def mtf(fnames, force_run=False):
     df = df.reset_index(drop=True)
     df['image_cycles'] = df.image_content.apply(lambda x: int(x.replace(' cyc/image', '')))
     df['display_freq'] = df.apply(lambda x: x.image_cycles / int(x.grating_size.replace(' pix', '')), 1)
-    df.to_csv("mtf.csv", index=False)
+    df.to_csv(save_path, index=False)
     return df
 
 
@@ -583,5 +583,7 @@ if __name__ == '__main__':
     parser.add_argument("--force_run", "-f", action="store_true",
                         help=("Whether to run on all specified images or not. If not passed, we "
                               "skip all images that have already been analyzed"))
+    parser.add_argument("--save_path", "-s", default='mtf.csv',
+                        help="Path to save the output dataframe (as a csv)")
     args = vars(parser.parse_args())
-    mtf(args['images'], args['force_run'])
+    mtf(args['images'], args['force_run'], args['save_path'])

@@ -34,6 +34,7 @@ dependencies:
   - python-bidi
   - moviepy
   - pyosf
+  - snakemake>=5.4
   - pip:
       - requests[security]
       - pyglet
