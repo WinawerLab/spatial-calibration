@@ -7,7 +7,6 @@ import imageio
 import itertools
 import os
 import warnings
-import subprocess
 import numpy as np
 import pandas as pd
 from . import utils
@@ -139,30 +138,45 @@ def _find_squares(X, grating_edge, white_edge, black_edge):
     """find the distance from optimal we are for our given parameters X
 
     because of how scipy.optimize works, all the parameters to optimize have to be included in one
-    argument, X. Those should be (in order): x0, y0, r_grating, border_ring_width
+    argument, X. Those should be (in order): x0, y0, r_grating, border_ring_width, angle (should be
+    in degrees, within [-45, 45))
+
     """
-    x0, y0, r_grating, border_ring_width = X
+    x0, y0, r_grating, border_ring_width, angle = X
     vals = []
+    if angle < -45 or angle >= 45:
+        raise Exception("angle must lie within [-45, 45)")
+    # when the square is rotated, we don't compare it to the radius, but the radius scaled by an
+    # amount based on the rotation. we use trig to figure that scale factor out (draw out to
+    # convince yourself): as long as the angle lies between -45 and 45 degrees, the line from the
+    # center to the edge that forms a right angle (which is equal to the radius), the line to the
+    # edge that goes through our point x, y, and the edge form a right triangle, and so we divide r
+    # by cos(angle) in order to find the length fo the line that goes to the edge through x, y.
+    r_rescale = np.cos(np.deg2rad(angle))
     for x, y in grating_edge:
-        vals.append(utils._square_eqt(x, y, x0, y0) - r_grating)
+        vals.append(utils._square_eqt(x, y, x0, y0, angle) - (r_grating / r_rescale))
     for x, y in white_edge:
-        vals.append(utils._square_eqt(x, y, x0, y0) - (r_grating + border_ring_width))
+        vals.append(utils._square_eqt(x, y, x0, y0, angle) -
+                    ((r_grating + border_ring_width) / r_rescale))
     for x, y in black_edge:
-        vals.append(utils._square_eqt(x, y, x0, y0) - (r_grating + 2*border_ring_width))
+        vals.append(utils._square_eqt(x, y, x0, y0, angle) -
+                    ((r_grating + 2*border_ring_width) / r_rescale))
     return vals
 
 
 def _get_initial_guess(square_ctr, grating_edge, white_edge, black_edge):
     """get an initial guess for the parameters
 
-    this just converts from the values in pts_dict to the parameters we use to optimize.
+    this just converts from the values in pts_dict to the parameters we use to optimize. we always
+    guess 0 for the initial angle
+
     """
     rs = []
     for edge in [grating_edge, white_edge, black_edge]:
         if type(edge) is list:
             edge = edge[0]
-        rs.append(utils._square_eqt(edge[0], edge[1], square_ctr[0], square_ctr[1]))
-    return square_ctr[0], square_ctr[1], rs[0], np.mean(rs[1:]) - rs[0]
+        rs.append(utils._square_eqt(edge[0], edge[1], square_ctr[0], square_ctr[1], 0))
+    return square_ctr[0], square_ctr[1], rs[0], np.mean(rs[1:]) - rs[0], 0
 
 
 def find_mask_params(square_ctr, grating_edge, white_edge, black_edge):
@@ -180,11 +194,13 @@ def find_mask_params(square_ctr, grating_edge, white_edge, black_edge):
     this ideal, the worse this will perform (because the grating then won't actually fall in a
     square in the image)
 
-    returns: x0, y0, r_grating, border_ring_width
+    returns: x0, y0, r_grating, border_ring_width, angle
     """
     res = optimize.least_squares(_find_squares, _get_initial_guess(square_ctr, grating_edge,
                                                                    white_edge, black_edge),
-                                 args=(grating_edge, white_edge, black_edge))
+                                 args=(grating_edge, white_edge, black_edge),
+                                 bounds=([-np.inf, -np.inf, -np.inf, -np.inf, 0],
+                                         [np.inf, np.inf, np.inf, np.inf, 90]))
     return res.x
 
 
@@ -305,15 +321,15 @@ def _calc_freq(image_1d, n_cycles):
     return n_cycles / len(image_1d)
 
 
-def get_frequency(image, metadata, grating_mask, white_mask, black_mask, x0, y0):
+def get_frequency(image, metadata, grating_mask, white_mask, black_mask, x0, y0, angle):
     """get the frequency of the two segments of the passed in image (grating and border)
 
     we cheat with this, using the fact that we know the number of cycles in the grating (from the
     image metadata) and the border (which is 1), so we only need to find the length of the signals
     in order to get the frequency
     """
-    grating_1d = utils.extract_1d_grating(image, grating_mask, metadata['direction'])
-    border_1d = utils.extract_1d_border(image, white_mask, black_mask, x0, y0)
+    grating_1d = utils.extract_1d_grating(image, grating_mask, metadata['direction'], angle)
+    border_1d = utils.extract_1d_border(image, white_mask, black_mask, x0, y0, angle)
     # this converts a string of the format "32 cyc/image" into the integer 32
     grating_freq = _calc_freq(grating_1d, int(metadata['content'].split(' ')[0]))
     border_freq = _calc_freq(border_1d, 1)
@@ -376,17 +392,19 @@ def main(fname, preprocess_type, blank_lum_image=None):
         fig = utils.check_pts_dict(lum_image, pts_dict)
         fig.savefig(save_stem % 'mask_check' + "_pts.png", dpi=96)
         plt.close(fig)
-        x0, y0, r_grating, border_ring_width = find_mask_params(**pts_dict)
+        x0, y0, r_grating, border_ring_width, angle = find_mask_params(**pts_dict)
         grating_mask, white_mask, black_mask = utils.create_square_masks(lum_image.shape, x0, y0,
-                                                                         r_grating, border_ring_width)
-        fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])    
+                                                                         r_grating,
+                                                                         border_ring_width, angle)
+        fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])
         fig.savefig(save_stem % 'mask_check' + "_masks.png")
         plt.close(fig)
         grating_rms = rms_contrast(lum_image[grating_mask])
         # since the masks are boolean, we can simply sum them to get the union
         border_rms = rms_contrast(lum_image[white_mask+black_mask])
-        grating_1d = utils.extract_1d_grating(lum_image, grating_mask, metadata['direction'])
-        border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0)
+        grating_1d = utils.extract_1d_grating(lum_image, grating_mask, metadata['direction'],
+                                              angle)
+        border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0, angle)
         _, _, grating_fourier_contrast, grating_fourier_freq = fourier_contrast(grating_1d,
                                                                                 plot_flag=False)
         _, _, border_fourier_contrast, border_fourier_freq = fourier_contrast(border,
@@ -402,8 +420,9 @@ def main(fname, preprocess_type, blank_lum_image=None):
             grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
             border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
             grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask,
-                                                  metadata['direction'])
-            border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0)
+                                                  metadata['direction'], angle)
+            border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0,
+                                             angle)
             _, _, grating_fourier_corrected, _ = fourier_contrast(grating_1d, plot_flag=False)
             _, _, border_fourier_corrected, _ = fourier_contrast(border, plot_flag=False)
         else:
@@ -411,8 +430,8 @@ def main(fname, preprocess_type, blank_lum_image=None):
             border_rms_corrected = None
             grating_fourier_corrected = None
             border_fourier_corrected = None
-        grating_rms_freq, border_rms_freq = get_frequency(lum_image, metadata, grating_mask, white_mask,
-                                                  black_mask, x0, y0)
+        grating_rms_freq, border_rms_freq = get_frequency(lum_image, metadata, grating_mask,
+                                                          white_mask, black_mask, x0, y0, angle)
         return (grating_rms_freq, grating_rms, grating_rms_corrected, grating_fourier_freq,
                 grating_fourier_contrast, grating_fourier_corrected, border_rms_freq,
                 border_rms, border_rms_corrected, border_fourier_freq, border_fourier_contrast,
