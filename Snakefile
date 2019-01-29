@@ -10,7 +10,7 @@ rule preprocess_image:
     output:
         os.path.join(config['DATA_DIR'], 'preprocessed', '{preproc_method}', '{filename}.{ext}')
     shell:
-        "python pyspacal/utils.py {input} -p {preproc_method}"
+        "python -m pyspacal.utils {input} -p {preproc_method}"
 
 rule image_mtf:
     input:
@@ -21,4 +21,4 @@ rule image_mtf:
     output:
         os.path.join(config['DATA_DIR'], 'mtf-{filename}.csv')
     shell:
-        "python pyspacal/mtf.py {input.raw} -f -s {output}"
+        "python -m pyspacal.mtf {input.raw} -f -s {output}"
