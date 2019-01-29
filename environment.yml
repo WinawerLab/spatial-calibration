@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
   - anaconda
+  - bioconda
 dependencies:
   - python==3.6
   - pip
