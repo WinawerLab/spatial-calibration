@@ -23,10 +23,11 @@ LMS_TO_LUM = np.array([433.9441, 275.82, -.0935])
 
 def create_mosaic_mask(img_shape, bayer_mosaic):
     """create mask based on Bayer mosaic of the camera
-    
+
     this is based on the Brainard's lab's SimToolbox's SimCreateMask.m"""
     # First create a small kernel representing the RGB mosaic pattern
-    kernels = np.zeros((len(np.unique(bayer_mosaic)), bayer_mosaic.shape[0], bayer_mosaic.shape[1]))
+    kernels = np.zeros((len(np.unique(bayer_mosaic)), bayer_mosaic.shape[0],
+                        bayer_mosaic.shape[1]))
     for i in range(bayer_mosaic.shape[0]):
         for j in range(bayer_mosaic.shape[1]):
             kernels[bayer_mosaic[i, j], i, j] = 1
@@ -34,7 +35,9 @@ def create_mosaic_mask(img_shape, bayer_mosaic):
     # Then repeat the kernel to build a mask to the size  of the image
     mask = []
     for n in range(kernels.shape[0]):
-        mask.append(np.tile(kernels[n], (int(np.ceil(img_shape[0] / float(bayer_mosaic.shape[0]))+1), int(np.ceil(img_shape[1] / float(bayer_mosaic.shape[1]))+1))))
+        mask.append(np.tile(kernels[n],
+                            (int(np.ceil(img_shape[0] / float(bayer_mosaic.shape[0]))+1),
+                             int(np.ceil(img_shape[1] / float(bayer_mosaic.shape[1]))+1))))
     mask = np.dstack(mask).transpose((2, 0, 1))
     if mask.shape[1] < img_shape[0] or mask.shape[2] < img_shape[1]:
         raise Exception('Logic error in computation of mask size')
@@ -53,11 +56,11 @@ def demosaic_image(img, mosaic_mask):
 
 def _block_avg_helper(img):
     """block average a single channel of the image
-    
+
     note that the image you pass must be 2d"""
     assert img.ndim == 2, "Can only block average 2d images!"
-    avged = 0.25*(img[1:,:-1] + img[:-1, 1:] + img[:-1,:-1] + img[1:,1:])
-    return avged[::2, ::2]   
+    avged = 0.25*(img[1:, :-1] + img[:-1, 1:] + img[:-1, :-1] + img[1:, 1:])
+    return avged[::2, ::2]
 
 
 def block_avg(raw_demosaiced_img, weights=[4, 2, 4]):
@@ -75,17 +78,21 @@ def block_avg(raw_demosaiced_img, weights=[4, 2, 4]):
 
 def standardizing_constant(iso, f_number, exposure_time, **kwargs):
     """calculate the constant to convert raw to standard RGB values
-    
-    note that kwargs is ignored, we just use it so we can swallow the extra keys from the 
-    metadata dict"""
+
+    note that kwargs is ignored, we just use it so we can swallow the extra keys from the metadata
+    dict
+
+    """
     return (1000. / iso) * (f_number / 1.8)**2 * (1. / exposure_time)
 
 
 def standardize_rgb(demosaiced_img, iso, f_number, exposure_time, **kwargs):
     """standardize the rgb values of the demosaiced image
 
-    note that kwargs is ignored, we just use it so we can swallow the extra keys from the 
-    metadata dict"""
+    note that kwargs is ignored, we just use it so we can swallow the extra keys from the metadata
+    dict
+
+    """
     return demosaiced_img * standardizing_constant(iso, f_number, exposure_time)
 
 
@@ -111,7 +118,7 @@ def calculate_conversion_matrix_scaling_factor(calc_rgb_to_lms, paper_rgb_to_lms
     def find_scaling_factor(x):
         return (paper_rgb_to_lms - x*calc_rgb_to_lms).flatten()
 
-    res = optimize.least_squares(find_scaling_factor, 1)    
+    res = optimize.least_squares(find_scaling_factor, 1)
     return res.x
 
 
@@ -125,13 +132,14 @@ def luminance_image(standard_rgb_img, rgb_to_lms, scaling_factor=1., lms_to_lum=
 
     scaling_factor: float. how much to scale the rgb_to_lms matrix by. this is used when your
     rgb_to_lms is the calculated version, and so you need to rescale it so it can handle the much
-    larger values of the standard_rgb_img (see `calculate_conversion_matrix_scaling_factor` for more
-    details)
+    larger values of the standard_rgb_img (see `calculate_conversion_matrix_scaling_factor` for
+    more details)
+
     """
     # that transpose is to get the dimensions in the right order for matmul. I'm unsure why that's
     # the way it is, but so it goes.
     return np.dot(lms_to_lum, np.matmul(scaling_factor * rgb_to_lms,
-                                        standard_rgb_img.transpose(1,0,2)))
+                                        standard_rgb_img.transpose(1, 0, 2)))
 
 
 def _find_squares(X, grating_edge, white_edge, black_edge):
@@ -218,7 +226,7 @@ def run_fft(grating_1d):
 
     amp = np.abs(fft)
 
-    return amp, fft, freqs    
+    return amp, fft, freqs
 
 
 def check_filtering(grating_1d, filtered_grating_1d, normalized_contrast):
@@ -227,11 +235,11 @@ def check_filtering(grating_1d, filtered_grating_1d, normalized_contrast):
     plt.figure(figsize=(25, 5))
     plt.plot(grating_1d)
     plt.title('1d grating')
-    
+
     plt.figure(figsize=(25, 5))
     plt.plot(filtered_grating_1d)
     plt.title('Filtered fundamental')
-    
+
     print("Square-wave contrast: %s" % normalized_contrast)
 
 
@@ -250,26 +258,26 @@ def fourier_contrast(grating_1d, n_phases=20, plot_flag=True):
     amps = {}
     for phase in range(n_phases):
         amp, fft, freqs = run_fft(grating_1d[phase:])
-        amp[freqs==0] = 0
+        amp[freqs == 0] = 0
         amps[phase] = np.max(amp)
-        
+
     max_phase = max(amps, key=lambda key: amps[key])
     amp, fft, freqs = run_fft(grating_1d[max_phase:])
-    
+
     # since this comes from a real signal, we know the fft is symmetric (if it's not exactly
     # symmetric for some reason, that's because of a precision error), so we just drop the negative
     # frequencies and double the positive ones (except the DC and highest frequency components,
     # which correspond to each other). we do this for the amplitude, since that's what we'll use to
     # get the contrast, but not for the fft, since we use that to reconstruct the filtered signal.
-    amp = amp[freqs>=0]
+    amp = amp[freqs >= 0]
     amp[1:-1] = 2*amp[1:-1]
 
     if plot_flag:
         fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-        ax.stem(freqs[freqs>=0], amp)
+        ax.stem(freqs[freqs >= 0], amp)
         ax.set_title('Amplitude')
 
-    amp[freqs[freqs>=0]==0] = 0
+    amp[freqs[freqs >= 0] == 0] = 0
     amp_argmax = np.argmax(amp)
     contrast = amp[amp_argmax]
     # contrast is the contrast of the fundamental; in order to get the contrast of the square-wave
@@ -277,9 +285,9 @@ def fourier_contrast(grating_1d, n_phases=20, plot_flag=True):
     # http://mathworld.wolfram.com/FourierSeriesSquareWave.html for an explanation
     normalized_contrast = contrast * np.pi / 4
 
-    freq_max = freqs[freqs>=0][amp_argmax]
-    freq_argmax = np.array([np.argwhere(freqs==freq_max)[0],
-                            np.argwhere(freqs==-freq_max)[0]])
+    freq_max = freqs[freqs >= 0][amp_argmax]
+    freq_argmax = np.array([np.argwhere(freqs == freq_max)[0],
+                            np.argwhere(freqs == -freq_max)[0]])
 
     if plot_flag:
         print("Max phase crop: %s" % max_phase)
@@ -287,7 +295,7 @@ def fourier_contrast(grating_1d, n_phases=20, plot_flag=True):
         print("Amplitude at max frequency:\n %s\n" % amp[amp_argmax])
 
     filtered_fft = np.zeros(len(fft), dtype=np.complex)
-    filtered_fft[np.argwhere(freqs==0)] = fft[np.argwhere(freqs==0)]
+    filtered_fft[np.argwhere(freqs == 0)] = fft[np.argwhere(freqs == 0)]
     filtered_fft[freq_argmax] = fft[freq_argmax]
 
     filtered_grating_1d = np.fft.ifft(np.fft.ifftshift(filtered_fft)) * len(fft)
@@ -297,7 +305,7 @@ def fourier_contrast(grating_1d, n_phases=20, plot_flag=True):
 
     if plot_flag:
         check_filtering(grating_1d, filtered_grating_1d, normalized_contrast)
-    
+
     return filtered_grating_1d, contrast, normalized_contrast, freq_max
 
 
@@ -353,7 +361,8 @@ def create_luminance_image(fname, preprocess_type):
     utils.preprocess_image(fname, preprocess_type)
     img, metadata = utils.load_img_with_metadata(fname, preprocess_type)
     if img.ndim == 2:
-        mask, kernels = create_mosaic_mask(img.shape, camera_data.BAYER_MATRICES[metadata['camera']])
+        mask, kernels = create_mosaic_mask(img.shape,
+                                           camera_data.BAYER_MATRICES[metadata['camera']])
         raw_demosaiced_image = demosaic_image(img, mask)
         demosaiced_image = block_avg(raw_demosaiced_image)
     else:
@@ -361,7 +370,7 @@ def create_luminance_image(fname, preprocess_type):
         demosaiced_image = img.transpose((2, 0, 1))
     standard_RGB = standardize_rgb(demosaiced_image, **metadata)
     s_lms = utils.load_cone_fundamental_matrix()
-    s_rgb = utils.load_camspec_sensitivity_matrix(camera=metadata['camera'])    
+    s_rgb = utils.load_camspec_sensitivity_matrix(camera=metadata['camera'])
     rgb_to_lms = calculate_rgb_to_lms(s_rgb, s_lms)
     scaling_factor = calculate_conversion_matrix_scaling_factor(rgb_to_lms)
     lum_image = luminance_image(standard_RGB, rgb_to_lms, scaling_factor)
@@ -474,16 +483,18 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
         for f, preproc in tuples_to_analyze:
             # then this exact pair is not in orig_df and so we should analyze it. we use isin
             # instead of == because isin will work for the empty dataframe as well
-            if orig_df[(orig_df.filenames.isin([f])) & (orig_df.preprocess_type.isin([preproc]))].empty:
+            if orig_df[(orig_df.filenames.isin([f])) &
+                       (orig_df.preprocess_type.isin([preproc]))].empty:
                 tmp.append((f, preproc))
-        tuples_to_analyze= tmp
+        tuples_to_analyze = tmp
     else:
         # iterate through the tuples to analyze and drop all of them from orig_df
         for f, preproc in tuples_to_analyze:
-            idx = orig_df[(orig_df.filenames.isin([f])) & (orig_df.preprocess_type.isin([preproc]))].index
+            idx = orig_df[(orig_df.filenames.isin([f])) &
+                          (orig_df.preprocess_type.isin([preproc]))].index
             orig_df.drop(idx)
     if tuples_to_analyze:
-        print("Analyzing:\n\t%s"%"\n\t".join([", ".join(tup) for tup in tuples_to_analyze]))
+        print("Analyzing:\n\t%s" % "\n\t".join([", ".join(tup) for tup in tuples_to_analyze]))
     else:
         print("No new images to analyze, exiting...")
         return
@@ -546,7 +557,7 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
          'border_fourier_frequencies': border_freqs_fourier,
          'border_fourier_contrasts': border_fourier, 'grating_size': size_pix,
          'border_fourier_contrasts_corrected': border_fourier_corrected, 'filenames': fnames,
-         'image_content': content, 'image_context': context, 'grating_direction': direction, 
+         'image_content': content, 'image_context': context, 'grating_direction': direction,
          'luminance_mean': lum_mean, 'luminance_min': lum_min, 'luminance_max': lum_max,
          'std_RGB_mean': std_mean, 'std_RGB_min': std_min, 'std_RGB_max': std_max, 'iso': iso,
          'f_number': f_number, 'exposure_time': exposure_time, 'demosaiced_mean': demosaic_mean,
@@ -560,9 +571,10 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
                   'std_RGB_min', 'std_RGB_max', 'filenames', 'grating_size',
                   '%s_%s_frequencies' % (name, contrast), '%s_%s_contrasts' % (name, contrast),
                   '%s_%s_contrasts_corrected' % (name, contrast), 'preprocess_type']]
-        tmp = tmp.rename(columns={'%s_%s_frequencies'%(name, contrast): 'frequency',
-                                  '%s_%s_contrasts'%(name, contrast): 'contrast',
-                                  '%s_%s_contrasts_corrected'%(name, contrast): 'lum_corrected_contrast'})
+        tmp = tmp.rename(columns={'%s_%s_frequencies' % (name, contrast): 'frequency',
+                                  '%s_%s_contrasts' % (name, contrast): 'contrast',
+                                  '%s_%s_contrasts_corrected' % (name, contrast):
+                                  'lum_corrected_contrast'})
         tmp['grating_type'] = name
         tmp['contrast_type'] = contrast
         tmps.append(tmp)

@@ -28,7 +28,7 @@ def show_im_well(img, ppi=96, zoom=1):
     fig = plt.figure(figsize=(zoom*img.shape[1]/ppi, zoom*img.shape[0]/ppi), dpi=ppi)
     bbox = fig.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     fig_width, fig_height = bbox.width*fig.dpi, bbox.height*fig.dpi
-    ax= fig.add_axes([0, 0, 1, 1], frameon=False, xticks=[], yticks=[])
+    ax = fig.add_axes([0, 0, 1, 1], frameon=False, xticks=[], yticks=[])
     ax.imshow(img, cmap='gray', interpolation='none')
     return fig
 
@@ -60,7 +60,8 @@ def preprocess_image(raw_fname, preprocess_type):
             raise Exception("Cannot find nikon_demosaic preprocessed image and cannot create it"
                             " myself; use Nikon's Capture NX-D software to do this yourself")
         else:
-            raise Exception("Unsure how to preprocess image for preprocess_type %s" % preprocess_type)
+            raise Exception("Unsure how to preprocess image for preprocess_type %s" %
+                            preprocess_type)
 
 
 def find_preprocessed_file(raw_fname, preprocess_type):
@@ -118,7 +119,7 @@ def load_cone_fundamental_matrix(fname='data/linss2_10e_5.csv', min_wavelength=4
     s_lms = pd.read_csv('data/linss2_10e_5.csv', header=None,
                         names=['wavelength', 'l_sens', 'm_sens', 's_sens'])
     s_lms = s_lms.fillna(0)
-    s_lms = s_lms[(s_lms.wavelength>=min_wavelength) & (s_lms.wavelength<=max_wavelength)]
+    s_lms = s_lms[(s_lms.wavelength >= min_wavelength) & (s_lms.wavelength <= max_wavelength)]
     data_wavelength_incr = np.unique(s_lms['wavelength'][1:].values - s_lms['wavelength'][:-1].values)
     if len(data_wavelength_incr) > 1:
         raise Exception("The cone fundamental matrix found at %s does not evenly sample the "
@@ -133,7 +134,7 @@ def load_cone_fundamental_matrix(fname='data/linss2_10e_5.csv', min_wavelength=4
                         "every %s nm. The target must be an integer multiple of the data!" %
                         (target_wavelength_incr, data_wavelength_incr[0]))
     s_lms = s_lms[::int(subsample_amt)].reset_index(drop=True)
-    s_lms_mat = s_lms[['l_sens', 'm_sens', 's_sens']].values    
+    s_lms_mat = s_lms[['l_sens', 'm_sens', 's_sens']].values
     return s_lms_mat
 
 
@@ -186,23 +187,23 @@ def load_camspec_sensitivity_matrix(fname='data/camspec_database.txt', camera=No
         elif i % 4 == 2:
             g_sens.append([float(j) for j in t])
         elif i % 4 == 3:
-            b_sens.append([float(j) for j in t])        
+            b_sens.append([float(j) for j in t])
 
     # in order to easily parse this as a dataframe, we tile / repeat the wavelengths / cameras
     # (respectively) so that those arrays are the same length as the sensitivity ones
     wavelengths = np.tile(wavelengths, len(cameras))
     cameras = np.repeat(np.array(cameras).flatten(), n_wavelengths)
     r_sens = np.array(r_sens).flatten()
-    g_sens = np.array(g_sens).flatten()    
-    b_sens = np.array(b_sens).flatten()    
+    g_sens = np.array(g_sens).flatten()
+    b_sens = np.array(b_sens).flatten()
 
     s_rgb = pd.DataFrame({'camera': cameras, 'r_sens': r_sens, 'g_sens': g_sens, 'b_sens': b_sens,
                           'wavelength': wavelengths})
     if camera is not None:
         # to make matching easier, we downcase both the target and all the values
         s_rgb.camera = s_rgb.camera.apply(lambda x: x.lower())
-        s_rgb = s_rgb[s_rgb.camera==camera.lower()]
-        s_rgb = s_rgb[['r_sens', 'g_sens', 'b_sens']].values    
+        s_rgb = s_rgb[s_rgb.camera == camera.lower()]
+        s_rgb = s_rgb[['r_sens', 'g_sens', 'b_sens']].values
 
     return s_rgb
 
@@ -238,9 +239,9 @@ def load_pts_dict(filename, img_shape):
 
 
 def _plot_pts_on_img(img, pts, zoom=1):
-    fig=show_im_well(img, zoom=zoom)
+    fig = show_im_well(img, zoom=zoom)
     for p in pts:
-        plt.scatter(p[1], p[0])    
+        plt.scatter(p[1], p[0])
     return fig
 
 
