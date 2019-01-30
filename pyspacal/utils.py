@@ -20,6 +20,7 @@ import pandas as pd
 import seaborn as sns
 from . import camera_data
 import matplotlib.pyplot as plt
+from scipy import ndimage
 
 
 def show_im_well(img, ppi=96, zoom=1):
@@ -27,7 +28,7 @@ def show_im_well(img, ppi=96, zoom=1):
     fig = plt.figure(figsize=(zoom*img.shape[1]/ppi, zoom*img.shape[0]/ppi), dpi=ppi)
     bbox = fig.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     fig_width, fig_height = bbox.width*fig.dpi, bbox.height*fig.dpi
-    ax= fig.add_axes([0, 0, 1, 1], frameon=False, xticks=[], yticks=[])
+    ax = fig.add_axes([0, 0, 1, 1], frameon=False, xticks=[], yticks=[])
     ax.imshow(img, cmap='gray', interpolation='none')
     return fig
 
@@ -37,7 +38,6 @@ def _get_preprocessed_fname(raw_fname, preprocess_type):
     """
     preprocessed_fname = raw_fname.replace('raw', os.path.join("preprocessed",  preprocess_type))
     return os.path.splitext(preprocessed_fname)[0]
-    
 
 
 def preprocess_image(raw_fname, preprocess_type):
@@ -48,19 +48,20 @@ def preprocess_image(raw_fname, preprocess_type):
     except Exception:
         preprocessed_fname = _get_preprocessed_fname(raw_fname, preprocess_type)
         if preprocess_type == 'no_demosaic':
-            subprocess.call(['dcraw', '-4', '-d', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-d', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".pgm", preprocessed_fname + ".pgm")
         elif preprocess_type == 'dcraw_vng_demosaic':
-            subprocess.call(['dcraw', '-4', '-q', '1', '-T', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-q', '1', '-T', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
         elif preprocess_type == 'dcraw_ahd_demosaic':
-            subprocess.call(['dcraw', '-4', '-q', '3', '-T', raw_fname])
+            subprocess.call(['dcraw', '-v', '-4', '-q', '3', '-T', raw_fname])
             shutil.move(os.path.splitext(raw_fname)[0] + ".tiff", preprocessed_fname + ".tiff")
         elif preprocess_type == 'nikon_demosaic':
             raise Exception("Cannot find nikon_demosaic preprocessed image and cannot create it"
                             " myself; use Nikon's Capture NX-D software to do this yourself")
         else:
-            raise Exception("Unsure how to preprocess image for preprocess_type %s" % preprocess_type)
+            raise Exception("Unsure how to preprocess image for preprocess_type %s" %
+                            preprocess_type)
 
 
 def find_preprocessed_file(raw_fname, preprocess_type):
@@ -92,10 +93,10 @@ def load_img_with_metadata(raw_fname, preprocess_type):
                 'filename': os.path.splitext(os.path.split(raw_fname)[-1])[0],
                 'camera': tags['Image Model'].values,
                 'preprocess_type': preprocess_type}
-    metadata['context'] = camera_data.IMG_INFO[metadata['filename']][0]
-    metadata['content'] = camera_data.IMG_INFO[metadata['filename']][1]
-    metadata['direction'] = camera_data.IMG_INFO[metadata['filename']][2]
-    metadata['size'] = camera_data.IMG_INFO[metadata['filename']][3]
+    metadata['image_context'] = camera_data.IMG_INFO[metadata['filename']][0]
+    metadata['image_content'] = camera_data.IMG_INFO[metadata['filename']][1]
+    metadata['grating_direction'] = camera_data.IMG_INFO[metadata['filename']][2]
+    metadata['grating_size'] = camera_data.IMG_INFO[metadata['filename']][3]
     img = find_preprocessed_file(raw_fname, preprocess_type)
     return img, metadata
 
@@ -118,7 +119,7 @@ def load_cone_fundamental_matrix(fname='data/linss2_10e_5.csv', min_wavelength=4
     s_lms = pd.read_csv('data/linss2_10e_5.csv', header=None,
                         names=['wavelength', 'l_sens', 'm_sens', 's_sens'])
     s_lms = s_lms.fillna(0)
-    s_lms = s_lms[(s_lms.wavelength>=min_wavelength) & (s_lms.wavelength<=max_wavelength)]
+    s_lms = s_lms[(s_lms.wavelength >= min_wavelength) & (s_lms.wavelength <= max_wavelength)]
     data_wavelength_incr = np.unique(s_lms['wavelength'][1:].values - s_lms['wavelength'][:-1].values)
     if len(data_wavelength_incr) > 1:
         raise Exception("The cone fundamental matrix found at %s does not evenly sample the "
@@ -133,7 +134,7 @@ def load_cone_fundamental_matrix(fname='data/linss2_10e_5.csv', min_wavelength=4
                         "every %s nm. The target must be an integer multiple of the data!" %
                         (target_wavelength_incr, data_wavelength_incr[0]))
     s_lms = s_lms[::int(subsample_amt)].reset_index(drop=True)
-    s_lms_mat = s_lms[['l_sens', 'm_sens', 's_sens']].values    
+    s_lms_mat = s_lms[['l_sens', 'm_sens', 's_sens']].values
     return s_lms_mat
 
 
@@ -186,23 +187,23 @@ def load_camspec_sensitivity_matrix(fname='data/camspec_database.txt', camera=No
         elif i % 4 == 2:
             g_sens.append([float(j) for j in t])
         elif i % 4 == 3:
-            b_sens.append([float(j) for j in t])        
+            b_sens.append([float(j) for j in t])
 
     # in order to easily parse this as a dataframe, we tile / repeat the wavelengths / cameras
     # (respectively) so that those arrays are the same length as the sensitivity ones
     wavelengths = np.tile(wavelengths, len(cameras))
     cameras = np.repeat(np.array(cameras).flatten(), n_wavelengths)
     r_sens = np.array(r_sens).flatten()
-    g_sens = np.array(g_sens).flatten()    
-    b_sens = np.array(b_sens).flatten()    
+    g_sens = np.array(g_sens).flatten()
+    b_sens = np.array(b_sens).flatten()
 
     s_rgb = pd.DataFrame({'camera': cameras, 'r_sens': r_sens, 'g_sens': g_sens, 'b_sens': b_sens,
                           'wavelength': wavelengths})
     if camera is not None:
         # to make matching easier, we downcase both the target and all the values
         s_rgb.camera = s_rgb.camera.apply(lambda x: x.lower())
-        s_rgb = s_rgb[s_rgb.camera==camera.lower()]
-        s_rgb = s_rgb[['r_sens', 'g_sens', 'b_sens']].values    
+        s_rgb = s_rgb[s_rgb.camera == camera.lower()]
+        s_rgb = s_rgb[['r_sens', 'g_sens', 'b_sens']].values
 
     return s_rgb
 
@@ -238,9 +239,9 @@ def load_pts_dict(filename, img_shape):
 
 
 def _plot_pts_on_img(img, pts, zoom=1):
-    fig=show_im_well(img, zoom=zoom)
+    fig = show_im_well(img, zoom=zoom)
     for p in pts:
-        plt.scatter(p[1], p[0])    
+        plt.scatter(p[1], p[0])
     return fig
 
 
@@ -250,7 +251,34 @@ def check_pts_dict(img, pts_dict, zoom=1):
     return _plot_pts_on_img(img, pts, zoom)
 
 
-def _square_eqt(x, y, x0, y0):
+def _reshape_rotated_image(img, target_shape):
+    """reshape rotated image
+
+    when we rotate an image, we want to reshape it back to its original shape, cropping off the
+    bits that don't fit. we do this in a symmetric way, since the rotation will always be symmetric
+    about the center of the image.
+    """
+    shape_offset = [int((val_shape - x_shape) / 2) for val_shape, x_shape in zip(img.shape,
+                                                                                 target_shape)]
+    for i, s in enumerate(shape_offset):
+        if s != 0:
+            if i == 0:
+                img = img[s:-s, :]
+            if i == 1:
+                img = img[:, s:-s]
+    try:
+        img = img.reshape(target_shape)
+    except ValueError:
+        # depending on rounding, this can be one bigger
+        if img.shape[0] != target_shape[0]:
+            img = img[:-1, :]
+        if img.shape[1] != target_shape[1]:
+            img = img[:, :-1]
+        img = img.reshape(target_shape)
+    return img
+
+
+def _square_eqt(x, y, x0, y0, angle):
     """simple equation for a square.
 
     this returns: max(np.dstack([abs(x0 - x), abs(y0 -y)]), 2). this should then be compared to the
@@ -260,14 +288,23 @@ def _square_eqt(x, y, x0, y0):
     http://polymathprogrammer.com/2010/03/01/answered-can-you-describe-a-square-with-1-equation/
 
     x, y: either one number or arrays of the same size (as returned by meshgrid)
+
+    angle: angle in degrees. should lie in [-45, 45)
     """
     x = np.array(x)
     y = np.array(y)
     vals = np.max(np.dstack([np.abs(x0 - x), np.abs(y0 - y)]), 2)
+    if x.ndim == 2:
+        # only rotate the image if x is 2d. in that case, we're returning a rotated image of the
+        # square.  if x is 1d, then we just want the distance to the origin (which we don't rotate)
+        # -- the "radius" of the square will need to be rotated
+        vals = ndimage.rotate(vals, angle)
+        vals = _reshape_rotated_image(vals, x.shape)
     return vals.reshape(x.shape)
 
 
-def create_square_masks(img_shape, square_ctr_x, square_ctr_y, grating_radius, border_ring_width):
+def create_square_masks(img_shape, square_ctr_x, square_ctr_y, grating_radius, border_ring_width,
+                        angle):
     """create square masks to extract relevant regions
 
     this uses the outputs from mtf.find_mask_params and returns three boolean masks to extract: the
@@ -275,18 +312,18 @@ def create_square_masks(img_shape, square_ctr_x, square_ctr_y, grating_radius, b
     """
     xgrid, ygrid = np.meshgrid(range(img_shape[1]), range(img_shape[0]))
     grating_mask = np.zeros(img_shape)
-    grating_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= grating_radius] = 1
+    grating_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) <= grating_radius] = 1
     white_mask = np.zeros(img_shape)
-    white_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= (grating_radius+border_ring_width)] = 1
+    white_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) <= (grating_radius+border_ring_width)] = 1
     white_mask -= grating_mask
     black_mask = np.zeros(img_shape)
-    black_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) <= (grating_radius+2*border_ring_width)] = 1
+    black_mask[_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) <= (grating_radius+2*border_ring_width)] = 1
     black_mask -= (grating_mask + white_mask)
     return grating_mask.astype(bool), white_mask.astype(bool), black_mask.astype(bool)
 
 
 def create_square_outlines(img_shape, square_ctr_x, square_ctr_y, grating_radius,
-                           border_ring_width, edge_tol=10):
+                           border_ring_width, angle, edge_tol=10):
     """create outlines of the circular masks used to extract relevant regions
 
     this does basically the same thing as `create_square_masks` but returns a list of indices into
@@ -297,11 +334,11 @@ def create_square_outlines(img_shape, square_ctr_x, square_ctr_y, grating_radius
     """
     xgrid, ygrid = np.meshgrid(range(img_shape[1]), range(img_shape[0]))
     grating_mask = np.zeros(img_shape)
-    grating_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - grating_radius) < edge_tol] = 1
+    grating_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) - grating_radius) < edge_tol] = 1
     white_mask = np.zeros(img_shape)
-    white_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - (grating_radius+border_ring_width)) < edge_tol] = 1
+    white_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) - (grating_radius+border_ring_width)) < edge_tol] = 1
     black_mask = np.zeros(img_shape)
-    black_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y) - (grating_radius+2*border_ring_width)) < edge_tol] = 1
+    black_mask[np.abs(_square_eqt(xgrid, ygrid, square_ctr_x, square_ctr_y, angle) - (grating_radius+2*border_ring_width)) < edge_tol] = 1
     return np.where(grating_mask), np.where(white_mask), np.where(black_mask)
 
 
@@ -314,9 +351,9 @@ def plot_masked_images(img, masks):
     fig, axes = plt.subplots(1, len(masks), figsize=(len(masks)*10, 10))
     for ax, mask in zip(axes, masks):
         tmp = img*mask
-        tmp[tmp==0] = np.nan
+        tmp[tmp == 0] = np.nan
         ax.imshow(tmp, cmap='gray', interpolation='none')
-        ax.set(xticks=[], yticks=[])    
+        ax.set(xticks=[], yticks=[])
     return fig
 
 
@@ -328,20 +365,22 @@ def plot_masked_distributions(img, masks):
     return fig
 
 
-def extract_1d_border(img, white_mask, black_mask, x0, y0):
+def extract_1d_border(img, white_mask, black_mask, x0, y0, angle):
     """
     """
-    white_ring = (img*white_mask)[int(y0), :int(x0)]
-    black_ring = (img*black_mask)[int(y0), :int(x0)]
+    rotated_img = _reshape_rotated_image(ndimage.rotate(img, -angle), img.shape)
+    white_ring = (rotated_img*white_mask)[int(y0), :int(x0)]
+    black_ring = (rotated_img*black_mask)[int(y0), :int(x0)]
     ring = white_ring + black_ring
-    ring[ring==0] = np.nan
+    ring[ring == 0] = np.nan
     ring = ring[~np.isnan(ring)]
     return ring
 
 
-def extract_1d_grating(img, grating_mask, direction):
-    grating = img * grating_mask
-    grating[grating==0] = np.nan
+def extract_1d_grating(img, grating_mask, direction, angle):
+    rotated_img = _reshape_rotated_image(ndimage.rotate(img, -angle), img.shape)
+    grating = rotated_img * grating_mask
+    grating[grating == 0] = np.nan
     if direction == 'vertical':
         grating_1d = np.nanmean(grating, 0)
     elif direction == 'horizontal':
@@ -354,7 +393,7 @@ def find_corresponding_blank(fname_stem):
     """this finds the filename of the blank image that corresponds to the specified image
     """
     df = pd.DataFrame(camera_data.IMG_INFO).T.rename(columns={0: 'context', 1: 'content'})
-    df = df[(df.context==df.loc[fname_stem].context)&(df.content=='blank')]
+    df = df[(df.context == df.loc[fname_stem].context) & (df.content == 'blank')]
     if len(df) > 1:
         raise Exception("Too many blank images have the same context as %s" % fname_stem)
     return df.index[0]
@@ -363,11 +402,11 @@ def find_corresponding_blank(fname_stem):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Preprocess images in specified way.")
     parser.add_argument("images", nargs='+',
-                        help=("What images to preprocess"))
+                        help=("What images to preprocess. We can only preprocess raw images "
+                              "(no JPGS)"))
     parser.add_argument("--preprocess_type", "-p",
                         help=("{no_demosaic, dcraw_vng_demosaic, dcraw_ahd_demosaic}. What "
                               "preprocessing method to use."))
     args = vars(parser.parse_args())
     for im in args['images']:
         preprocess_image(im, args['preprocess_type'])
-    

@@ -8,10 +8,10 @@ from psychopy.tools import imagetools
 import numpy as np
 from scipy import signal
 
-GAMMA_GRID = [[   0.591897  ,  157.111726  ,    2.40605342],
-              [   0.591897  ,   49.805004  ,    2.35119282],
-              [   0.591897  ,   92.823552  ,    2.44157325],
-              [   0.591897  ,   15.467635  ,    2.66103173]]
+GAMMA_GRID = [[0.591897, 157.111726, 2.40605342],
+              [0.591897, 49.805004, 2.35119282],
+              [0.591897, 92.823552, 2.44157325],
+              [0.591897, 15.467635, 2.66103173]]
 
 def create_stimuli_set(img_size=512):
     """create the stimuli set we want to use
@@ -27,7 +27,7 @@ def create_stimuli_set(img_size=512):
     black = black & ~white
     white = white & ~mask
     x = np.arange(0, img_size)
-    x, _ = np.meshgrid(x, x)    
+    x, _ = np.meshgrid(x, x)
     for i in range(num_freqs):
         cycle_half_len = 2**(num_freqs-i-1)
         # signal.square can look weird due to precision issues
@@ -63,7 +63,7 @@ def test_display(screen_size, stim_path=None, monitor_name='vpixx', img_size=512
     if stim_path is None:
         stimuli = create_stimuli_set(img_size)
         print("Stimuli will contain %s pixels, gratings will be %s pixels wide" % (stimuli.shape[1],
-                                                                                   stimuli.shape[1]//2))
+                                                                                   stimuli.shape[1] // 2))
     else:
         stimuli = np.load(stim_path)
         print("Stimuli loaded in from %s" % stim_path)
@@ -75,9 +75,9 @@ def test_display(screen_size, stim_path=None, monitor_name='vpixx', img_size=512
     elif monitor_name == 'psychophysics_lcd':
         mon.setGammaGrid(np.array(GAMMA_GRID))
     else:
-        raise Exception("I don't know your monitor's gamma and so the luminance values will be off."
-                        " This might not be a huge deal -- if you don't care, set monitor_name to "
-                        "vpixx to use a linear gamma")
+        raise Exception("I don't know your monitor's gamma and so the luminance values will be off"
+                        ". This might not be a huge deal -- if you don't care, set monitor_name to"
+                        " vpixx to use a linear gamma")
     wait_text = visual.TextStim(win, ("Press q or esc to quit, any other key to advance"))
     win.mouseVisible = False
     wait_text.draw()

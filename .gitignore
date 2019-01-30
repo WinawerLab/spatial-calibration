@@ -109,3 +109,6 @@ data/preprocessed
 data/luminance
 data/mask_check
 data/corrected_luminance
+
+# and the stimuli
+stim.npy

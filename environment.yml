@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
   - anaconda
+  - bioconda
 dependencies:
   - python==3.6
   - pip
@@ -21,7 +22,7 @@ dependencies:
   - configobj
   - pyyaml
   - gevent
-  - greenlet
+  - greenlet==0.4.15
   - msgpack-python
   - psutil
   - pytables
@@ -34,6 +35,7 @@ dependencies:
   - python-bidi
   - moviepy
   - pyosf
+  - snakemake>=5.4
   - pip:
       - requests[security]
       - pyglet
