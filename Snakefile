@@ -11,7 +11,7 @@ rule preprocess_image:
     output:
         os.path.join(config['DATA_DIR'], 'preprocessed', '{preproc_method}', '{filename}.{ext}')
     shell:
-        "python -m pyspacal.utils {input} -p {preproc_method}"
+        "python -m pyspacal.utils {input} -p {wildcards.preproc_method}"
 
 rule image_mtf:
     input:
