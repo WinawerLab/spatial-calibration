@@ -23,13 +23,13 @@ import matplotlib.pyplot as plt
 from scipy import ndimage
 
 
-def show_im_well(img, ppi=96, zoom=1):
+def show_im_well(img, ppi=96, zoom=1, **kwargs):
     ppi = float(ppi)
     fig = plt.figure(figsize=(zoom*img.shape[1]/ppi, zoom*img.shape[0]/ppi), dpi=ppi)
     bbox = fig.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     fig_width, fig_height = bbox.width*fig.dpi, bbox.height*fig.dpi
     ax = fig.add_axes([0, 0, 1, 1], frameon=False, xticks=[], yticks=[])
-    ax.imshow(img, cmap='gray', interpolation='none')
+    ax.imshow(img, cmap='gray', interpolation='none', **kwargs)
     return fig
 
 
