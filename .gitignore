@@ -112,3 +112,6 @@ data/corrected_luminance
 
 # and the stimuli
 stim.npy
+
+# and the snakemake folder
+.snakemake
