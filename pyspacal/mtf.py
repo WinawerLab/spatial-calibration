@@ -325,6 +325,19 @@ def rms_contrast(image):
     return np.sqrt(np.mean(np.square(image - np.mean(image)))) / np.mean(image)
 
 
+def michelson_contrast(image):
+    """calculate the Michelson contrast of the specified image
+
+    this is $\frac{I_{max}-I_{min}}{I_{max}+I_{min}}$, where $I_{max}$ and $I_{min}$ are the
+    highest and lowest luminance, respectively. note this is really only appropriate for patterns
+    where both bright and dark features are equivalent and take up similar fractions of the area
+
+    we just compute (image.max() - image.min()) / (image.max() + image.min())
+
+    """
+    return (image.max() - image.min()) / (image.max() + image.min())
+
+
 def _calc_freq(image_1d, n_cycles):
     return n_cycles / len(image_1d)
 
@@ -395,8 +408,8 @@ def main(fname, preprocess_type, blank_lum_image=None):
     # we'll have 4 rows per image: 2 by 2 coming from (grating, border) by (rms, fourier). that is,
     # which part of the image we're giving the contrast for and how we calculated it.
     metadata.update({'frequency': None, 'contrast': None, 'lum_corrected_contrast': None,
-                     'grating_type': ['grating', 'grating', 'border', 'border'],
-                     'contrast_type': ['rms', 'fourier', 'rms', 'fourier']})
+                     'grating_type': ['grating', 'grating', 'grating', 'border', 'border', 'border'],
+                     'contrast_type': ['rms', 'fourier', 'michelson', 'rms', 'fourier', 'michelson']})
     df = pd.DataFrame(metadata)
     funcs = zip(['mean', 'min', 'max'], [np.mean, np.min, np.max])
     imgs = zip(['luminance', 'demosaiced', 'std_RGB'], [lum_image, demosaiced_image, standard_RGB])
@@ -421,9 +434,13 @@ def main(fname, preprocess_type, blank_lum_image=None):
         plt.close(fig)
         grating_rms = rms_contrast(lum_image[grating_mask])
         df.loc[('grating', 'rms'), 'contrast'] = grating_rms
+        grating_michelson = michelson_contrast(lum_image[grating_mask])
+        df.loc[('grating', 'michelson'), 'contrast'] = grating_michelson
         # since the masks are boolean, we can simply sum them to get the union
         border_rms = rms_contrast(lum_image[white_mask+black_mask])
         df.loc[('border', 'rms'), 'contrast'] = border_rms
+        border_michelson = michelson_contrast(lum_image[white_mask+black_mask])
+        df.loc[('border', 'michelson'), 'contrast'] = border_michelson
         grating_1d = utils.extract_1d_grating(lum_image, grating_mask, metadata['grating_direction'],
                                               angle)
         border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0, angle)
@@ -445,6 +462,8 @@ def main(fname, preprocess_type, blank_lum_image=None):
             imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
             grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
             border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
+            grating_michelson_corrected = michelson_contrast(lum_image_corrected[grating_mask])
+            border_michelson_corrected = michelson_contrast(lum_image_corrected[white_mask+black_mask])
             grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask,
                                                   metadata['grating_direction'], angle)
             border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0,
@@ -453,12 +472,17 @@ def main(fname, preprocess_type, blank_lum_image=None):
             _, _, border_fourier_corrected, _ = fourier_contrast(border, plot_flag=False)
             df.loc[('grating', 'rms'), 'lum_corrected_contrast'] = grating_rms_corrected
             df.loc[('border', 'rms'), 'lum_corrected_contrast'] = border_rms_corrected
+            df.loc[('grating', 'michelson'), 'lum_corrected_contrast'] = grating_michelson_corrected
+            df.loc[('border', 'michelson'), 'lum_corrected_contrast'] = border_michelson_corrected
             df.loc[('grating', 'fourier'), 'lum_corrected_contrast'] = grating_fourier_corrected
             df.loc[('border', 'fourier'), 'lum_corrected_contrast'] = border_fourier_corrected
         grating_rms_freq, border_rms_freq = get_frequency(lum_image, metadata, grating_mask,
                                                           white_mask, black_mask, x0, y0, angle)
         df.loc[('grating', 'rms'), 'frequency'] = np.abs(grating_rms_freq)
         df.loc[('border', 'rms'), 'frequency'] = np.abs(border_rms_freq)
+        # this is the same frequency as the rms one
+        df.loc[('grating', 'michelson'), 'frequency'] = np.abs(grating_rms_freq)
+        df.loc[('border', 'michelson'), 'frequency'] = np.abs(border_rms_freq)
         return df.reset_index(), demosaiced_image, standard_RGB, lum_image
 
 
@@ -527,7 +551,7 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser("Calculate the MTF using the specified images")
+    parser = argparse.ArgumentParser(description="Calculate the MTF using the specified images")
     parser.add_argument("images", nargs='+',
                         help=("What images to calculate contrast for and use to create the MTF"))
     parser.add_argument("--force_run", "-f", action="store_true",
