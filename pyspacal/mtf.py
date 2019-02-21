@@ -169,7 +169,7 @@ def _find_squares(X, grating_edge, white_edge, black_edge):
     for x, y in black_edge:
         vals.append(utils._square_eqt(x, y, x0, y0, angle) -
                     ((r_grating + 2*border_ring_width) / r_rescale))
-    return vals
+    return np.sum(np.square(vals))
 
 
 def _get_initial_guess(square_ctr, grating_edge, white_edge, black_edge):
@@ -194,21 +194,22 @@ def find_mask_params(square_ctr, grating_edge, white_edge, black_edge):
     region containing the grating (x0, y0), the diameter of the grating (r_grating), and the width
     of each of the two border rings (border_ring_width). we do this using _find_squares, which
     tries to find those parameters such that we minimize the difference between $(x0 - x)^2 + (y0 -
-    y)^2 - r^2$, for the corresponding (x, y) and r for each ring (edge of the grating, edge of the
-    white border region, edge of the black border region); note that (x0, y0) is shared for all of
-    these.
+    y)^2 - r^2/cos(angle)$, for the corresponding (x, y) and r for each ring (edge of the grating,
+    edge of the white border region, edge of the black border region); note that (x0, y0) and angle
+    are shared for all of these.
 
     this works best when your picture is taken straight-on from the image; the farther you are from
     this ideal, the worse this will perform (because the grating then won't actually fall in a
     square in the image)
 
     returns: x0, y0, r_grating, border_ring_width, angle
+
     """
     res = optimize.least_squares(_find_squares, _get_initial_guess(square_ctr, grating_edge,
                                                                    white_edge, black_edge),
                                  args=(grating_edge, white_edge, black_edge),
-                                 bounds=([-np.inf, -np.inf, -np.inf, -np.inf, 0],
-                                         [np.inf, np.inf, np.inf, np.inf, 90]))
+                                 bounds=([-np.inf, -np.inf, -np.inf, -np.inf, -45],
+                                         [np.inf, np.inf, np.inf, np.inf, 45]))
     return res.x
 
 
