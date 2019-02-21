@@ -1,9 +1,8 @@
 import os
-import pandas as pd
 from pyspacal import camera_data
 
 configfile:
-    "/home/billbrod/Documents/spatial-calibration/config.yml"
+    os.path.expanduser("~/Documents/spatial-calibration/config.yml")
 
 rule preprocess_image:
     input:
@@ -26,6 +25,15 @@ rule image_mtf:
 
 rule join_csv:
     input:
-        [os.path.join(config['DATA_DIR'], 'mtf-%s.csv' % f) for f in camera_data.IMG_INFO.keys()]
+        [os.path.join(config['DATA_DIR'], 'mtf-%s.csv' % f) for f, v in camera_data.IMG_INFO.items() if v[1] != 'blank']
     output:
         os.path.join(config['DATA_DIR'], 'mtf.csv')
+    run:
+        import pandas as pd
+        import os
+
+        df = []
+        for f in input:
+            df.append(pd.read_csv(f))
+            os.remove(f)
+        pd.concat(df).reset_index(drop=True).to_csv(output[0], index=False)

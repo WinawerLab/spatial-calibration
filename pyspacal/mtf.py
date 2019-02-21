@@ -102,7 +102,7 @@ def calculate_rgb_to_lms(s_rgb, s_lms):
     this regresses the two sensitivity matrices against each other to find the 3x3 matrix that best
     converts from RGB to LMS values.
     """
-    return np.linalg.lstsq(s_rgb, s_lms)[0].transpose()
+    return np.linalg.lstsq(s_rgb, s_lms, rcond=None)[0].transpose()
 
 
 def calculate_conversion_matrix_scaling_factor(calc_rgb_to_lms, paper_rgb_to_lms=PAPER_RGB_TO_LMS):
@@ -460,6 +460,7 @@ def main(fname, preprocess_type, blank_lum_image=None):
             # lum_image, which gives an infinity. I'm not sure what to do with that, so throw it to
             # 0
             lum_image_corrected[np.isinf(lum_image_corrected)] = 0
+            lum_image_corrected[np.isnan(lum_image_corrected)] = 0
             imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
             grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
             border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
@@ -529,26 +530,29 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
     blank_lum_imgs = {}
     for f, preproc in tuples_to_analyze:
         f_stem = os.path.splitext(os.path.split(f)[-1])[0]
-        if (f_stem, preproc) in blank_lum_imgs.keys():
-            print("%s is a blank image, skipping..." % f)
-            continue
-        print("Analyzing %s with preproc method %s" % (f, preproc))
         blank_lum_name = utils.find_corresponding_blank(f_stem)
         if (blank_lum_name, preproc) not in blank_lum_imgs.keys():
             blank_fullname = os.path.join(os.path.split(f)[0], blank_lum_name) + '.NEF'
             blank_lum_imgs[(blank_lum_name, preproc)], _, _, _, _ = create_luminance_image(blank_fullname,
                                                                                            preproc)
+        if (f_stem, preproc) in blank_lum_imgs.keys():
+            print("%s is a blank image, skipping..." % f)
+            continue
+        print("Analyzing %s with preproc method %s" % (f, preproc))
         blank = blank_lum_imgs[(blank_lum_name, preproc)]
         df, demosaic, std, lum = main(f, preproc, blank)
         dfs.append(df)
-    df = pd.concat(dfs)
-    if orig_df is not None:
-        df = pd.concat([orig_df, df])
-    df = df.reset_index(drop=True)
-    df['image_cycles'] = df.image_content.apply(lambda x: int(x.replace(' cyc/image', '')))
-    df['display_freq'] = df.apply(lambda x: x.image_cycles / int(x.grating_size.replace(' pix', '')), 1)
-    df.to_csv(save_path, index=False)
-    return df
+    # if this function is only called on a blank image, there will be nothing in the dfs list to
+    # concatenate
+    if len(dfs) > 0:
+        df = pd.concat(dfs)
+        if orig_df is not None:
+            df = pd.concat([orig_df, df])
+        df = df.reset_index(drop=True)
+        df['image_cycles'] = df.image_content.apply(lambda x: int(x.replace(' cyc/image', '')))
+        df['display_freq'] = df.apply(lambda x: x.image_cycles / int(x.grating_size.replace(' pix', '')), 1)
+        df.to_csv(save_path, index=False)
+        return df
 
 
 if __name__ == '__main__':
