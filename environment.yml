@@ -36,6 +36,7 @@ dependencies:
   - moviepy
   - pyosf
   - snakemake>=5.4
+  - h5py
   - pip:
       - requests[security]
       - pyglet
