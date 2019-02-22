@@ -394,7 +394,7 @@ def ArrayData_heatmap(img, **kwargs):
     sns.heatmap(img.values[0].data, xticklabels=xticks, yticklabels=yticks, **kwargs)
 
 
-def ArrayData_imshow(img, cmap='gray', **kwargs):
+def ArrayData_imshow(img, cmap='gray', colorbar=False, **kwargs):
     """show image from ArrayData
 
     this function is to be used with seaborn's FacetGrid (and FacetGrid.map), allowing the user to
@@ -407,7 +407,13 @@ def ArrayData_imshow(img, cmap='gray', **kwargs):
         raise Exception("Didn't facet correctly, too many images meet this criteria! We can only "
                         "plot one")
     kwargs.pop('color')
-    plt.imshow(img.values[0].data, cmap=cmap, **kwargs)
+    fig = plt.gcf()
+    ax = plt.gca()
+    ax.set(xticks=[], yticks=[])
+    ax.set_frame_on(False)
+    mappable = ax.imshow(img.values[0].data, cmap=cmap, interpolation='none', **kwargs)
+    if colorbar:
+        fig.colorbar(mappable, ax=ax)
 
 
 def read_csv(filepath_or_buffer, sep=',', delimiter=None, header='infer', names=None,
