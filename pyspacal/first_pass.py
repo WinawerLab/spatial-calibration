@@ -67,7 +67,7 @@ def calc_mean_and_stddev(grating, box_size, step_size, buffer_pix=(0, 0)):
                 continue
             tmp = grating[x:x+box_size, y:y+box_size]
             mn = np.nanmean(tmp)
-            sd = np.sqrt(np.nansum(np.square(tmp - mn)))
+            sd = np.sqrt(np.nanmean(np.square(tmp - mn)))
             means[-1].append(mn)
             stddevs[-1].append(sd)
     means = np.array(means)
@@ -106,7 +106,9 @@ def main(fnames, save_path='summarize.csv', box_size_multiple=1, step_size_multi
 
         data = metadata.copy()
         data.update({'means': means, 'stddevs': stddevs, 'box_size': box_size,
-                     'step_size': step_size, 'cycle_size_pix': cyc_len_pix})
+                     'step_size': step_size, 'cycle_size_pix': cyc_len_pix,
+                     'box_size_multiple': box_size_multiple,
+                     'step_size_multiple': step_size_multiple})
         df.append(dfa.DataFrameArray(data))
     df = pd.concat(df).reset_index(drop=True)
     df.to_csv(save_path, index=False)
