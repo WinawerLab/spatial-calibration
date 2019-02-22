@@ -75,4 +75,5 @@ rule join_first_pass_csv:
         for f in input:
             df.append(dfa.read_csv(f))
             os.remove(f)
+            os.remove(os.path.splitext(f) + ".hdf5")
         pd.concat(df).reset_index(drop=True).to_csv(output[0], index=False)
