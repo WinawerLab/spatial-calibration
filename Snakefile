@@ -74,5 +74,5 @@ rule join_first_pass_csv:
         df = []
         for f in input:
             df.append(dfa.read_csv(f))
-            # os.remove(f)
+            os.remove(f)
         pd.concat(df).reset_index(drop=True).to_csv(output[0], index=False)
