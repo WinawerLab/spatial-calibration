@@ -21,7 +21,7 @@ rule image_mtf:
     output:
         os.path.join(config['DATA_DIR'], 'mtf-{filename}.csv')
     shell:
-        "python -m pyspacal.mtf {input.raw} -f -s {output}"
+        "python -m pyspacal.mtf {input.raw} -f -p {output}"
 
 rule join_csv:
     input:

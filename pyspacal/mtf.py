@@ -562,7 +562,7 @@ if __name__ == '__main__':
     parser.add_argument("--force_run", "-f", action="store_true",
                         help=("Whether to run on all specified images or not. If not passed, we "
                               "skip all images that have already been analyzed"))
-    parser.add_argument("--save_path", "-s", default='mtf.csv',
+    parser.add_argument("--save_path", "-p", default='mtf.csv',
                         help="Path to save the output dataframe (as a csv)")
     args = vars(parser.parse_args())
     mtf(args['images'], args['force_run'], args['save_path'])
