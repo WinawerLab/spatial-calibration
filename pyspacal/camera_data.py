@@ -77,7 +77,8 @@ IMG_INFO = {
     'DSC_0256': ['projector_zoomed_in', '64 cyc/image', 'horizontal', '256 pix'],
     'DSC_0257': ['projector_zoomed_in', '128 cyc/image', 'horizontal', '256 pix'],
     'DSC_0258': ['projector_zoomed_in', 'blank', 'blank', '256 pix'],
-    }
+    'DSC_0259': ['projector_3', 0, 'log_polar', '1080 pix'],
+}
 
 # the key specifies which image we're referring to and should be the filename as saved in the
 # metadata dictionary (that is, the filename with no directory or extension). each value here is a
@@ -577,5 +578,10 @@ PTS_DICT = {"DSC_0080":
                               (3392, 275), (1607, 309), (1472, 656), (1497, 1958)],
              "white_edge": [(859, 114), (884, 1480), (905, 2593)],
              "black_edge": [(254, 250), (271, 1214), (279, 2398)],
+             "image_size": (2868, 4310)},
+            "DSC_0259":
+            {"interior_edge": [(2237, 1524), (2377, 1486), (2358, 1334), (2198, 1346)],
+             "exterior_edge": [(1653, 2634), (3037, 2549), (3616, 1365), (2955, 271), (1516, 314),
+                               (925, 1419)],
              "image_size": (2868, 4310)},
             }
