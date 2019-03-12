@@ -7,8 +7,14 @@ configfile:
 
 FIRST_PASS_IMGS = ['DSC_0239', 'DSC_0240', 'DSC_0241', 'DSC_0242', 'DSC_0243',
                    'DSC_0247', 'DSC_0248', 'DSC_0249', 'DSC_0250', 'DSC_0252',
-                   'DSC_0254', 'DSC_0255', 'DSC_0256', 'DSC_0257']
-
+                   'DSC_0254', 'DSC_0255', 'DSC_0256', 'DSC_0257', 'capt0000',
+                   'capt0001', 'capt0002', 'capt0003', 'capt0004', 'capt0005',
+                   'capt0006', 'capt0007', 'capt0008', 'capt0009', 'capt0010',
+                   'capt0011', 'capt0012', 'capt0013', 'capt0014', 'capt0015',
+                   'capt0019', 'capt0020', 'capt0021', 'capt0022', 'capt0023',
+                   'capt0024', 'capt0025', 'capt0026', 'capt0027', 'capt0028',
+                   'capt0029', 'capt0030', 'capt0032', 'capt0033', 'capt0034',
+                   'capt0035', 'capt0042', 'capt0043', 'capt0044', 'capt0045']
 
 rule preprocess_image:
     input:
