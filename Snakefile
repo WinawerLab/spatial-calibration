@@ -62,7 +62,7 @@ rule first_pass:
 
 rule join_first_pass_csv:
     input:
-        [os.path.join(config['DATA_DIR'], 'first_pass-%s-b%s-s%s.csv' % (f, b, s)) for f in FIRST_PASS_IMGS for b in [.5, 1, 2] for s in [.5, 1, 2]]
+        [os.path.join(config['DATA_DIR'], 'first_pass-%s-b%s-s%s.csv' % (f, b, s)) for f in FIRST_PASS_IMGS for b in [1, 2] for s in [1, 2]]
     output:
         os.path.join(config['DATA_DIR'], 'first_pass.csv'),
         os.path.join(config['DATA_DIR'], 'first_pass.hdf5')
