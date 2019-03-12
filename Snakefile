@@ -31,7 +31,7 @@ rule image_mtf:
 
 rule join_mtf_csv:
     input:
-        [os.path.join(config['DATA_DIR'], 'mtf-%s.csv' % f) for f, v in camera_data.IMG_INFO.items() if v[1] != 'blank']
+        [os.path.join(config['DATA_DIR'], 'mtf-%s.csv' % f) for f, v in camera_data.IMG_INFO.items() if v[2] not in ['blank', 'log_polar']]
     output:
         os.path.join(config['DATA_DIR'], 'mtf.csv')
     run:
