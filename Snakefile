@@ -33,6 +33,12 @@ rule preprocess_image:
     shell:
         "python -m pyspacal.utils {input} -p {wildcards.preproc_method}"
 
+rule preprocess_all:
+    input:
+        [os.path.join(config['DATA_DIR'], 'preprocessed', 'no_demosaic', '%s.pgm' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
+        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_vng_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
+        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_ahd_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
+
 rule image_mtf:
     input:
         raw = get_raw_img,
