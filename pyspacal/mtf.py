@@ -366,11 +366,12 @@ def create_luminance_image(fname, preprocess_type):
 
     returns luminance image
     """
-    if not fname.endswith(".NEF"):
+    if not fname.endswith(".NEF") and not fname.endswith(".nef"):
         raise Exception("Must pass in the NEF image! %s" % fname)
     save_stem = os.path.splitext(fname.replace("raw", os.path.join("%s", "{preprocess_type}")))[0]
     save_stem = save_stem.format(preprocess_type=preprocess_type)
-    for deriv in ['luminance', 'mask_check', 'preprocessed', 'corrected_luminance']:
+    for deriv in ['luminance', 'mask_check', 'preprocessed', 'corrected_luminance',
+                  'corrected_demosaiced']:
         if not os.path.isdir(os.path.dirname(save_stem % deriv)):
             os.makedirs(os.path.dirname(save_stem % deriv))
     utils.preprocess_image(fname, preprocess_type)
@@ -393,7 +394,33 @@ def create_luminance_image(fname, preprocess_type):
     return lum_image, metadata, save_stem, demosaiced_image, standard_RGB
 
 
-def main(fname, preprocess_type, blank_lum_image=None):
+def get_contrast_in_df(df, img, img_name, contrast_type, grating_mask, white_mask, black_mask,
+                       metadata, x0, y0, angle, contrast_prefix=''):
+    """helper function that handles inserting the contrast into the df
+    """
+    if contrast_type == 'fourier':
+        grating_1d = utils.extract_1d_grating(img, grating_mask,
+                                              metadata['grating_direction'], angle)
+        border = utils.extract_1d_border(img, white_mask, black_mask, x0, y0, angle)
+        _, _, grating_contrast, grating_freq = fourier_contrast(grating_1d, plot_flag=False)
+        _, _, border_contrast, border_freq = fourier_contrast(border, plot_flag=False)
+    elif contrast_type in ['rms', 'michelson']:
+        grating_contrast = eval("%s_contrast(img[grating_mask])" % contrast_type)
+        # since the masks are boolean, we can simply sum them to get the union
+        border_contrast = eval("%s_contrast(img[white_mask+black_mask])" % contrast_type)
+        # this is the same for rms and michelson
+        grating_freq, border_freq = get_frequency(img, metadata, grating_mask,
+                                                  white_mask, black_mask, x0, y0, angle)
+    else:
+        raise Exception("Don't know how to handle contrast_type %s!" % contrast_type)
+    df.loc[(img_name, 'grating', contrast_type), 'frequency'] = np.abs(grating_freq)
+    df.loc[(img_name, 'grating', contrast_type), contrast_prefix+'contrast'] = grating_contrast
+    df.loc[(img_name, 'border', contrast_type), 'frequency'] = np.abs(border_freq)
+    df.loc[(img_name, 'border', contrast_type), contrast_prefix+'contrast'] = border_contrast
+    return df
+
+
+def main(fname, preprocess_type, blank_lum_image=None, blank_demosaiced_image_greyscale=None):
     """calculate the contrast, doing all of the steps in between
 
     see the MTF notebook to see this calculation stepped through one step at a time
@@ -404,19 +431,32 @@ def main(fname, preprocess_type, blank_lum_image=None):
     during this function element-wise by this array. Should do this in order to counter-act any
     variations in luminance across the screen (for example, if the luminance is highest in the
     center of the screen)
+
+    blank_demosaiced_image_greyscale: 2d numpy array, optional. If set, will divide the greyscale
+    demosaiced image created during this function element-wise by this array. Should do this in
+    order to counter-act any variations in luminance across the screen (for example, if the
+    luminance is highest in the center of the screen)
+
     """
     lum_image, metadata, save_stem, demosaiced_image, standard_RGB = create_luminance_image(fname, preprocess_type)
-    # we'll have 4 rows per image: 2 by 2 coming from (grating, border) by (rms, fourier). that is,
-    # which part of the image we're giving the contrast for and how we calculated it.
-    metadata.update({'frequency': None, 'contrast': None, 'lum_corrected_contrast': None,
-                     'grating_type': ['grating', 'grating', 'grating', 'border', 'border', 'border'],
-                     'contrast_type': ['rms', 'fourier', 'michelson', 'rms', 'fourier', 'michelson']})
+    # we just average across the RGB dimension
+    demosaiced_image_greyscale = demosaiced_image.mean(0)
+    # we'll have 12 rows per image: 2 by 2 by 3 coming from (luminance_image,
+    # demosaiced_image_greyscale) by (grating, border) by (rms, fourier, michelson). that is, which
+    # image, which part of the image we're giving the contrast for, and how we calculated it. And
+    # we need to cast this as a list so we can iterate through it multiple times.
+    prods = list(itertools.product(['luminance_image', 'demosaiced_image_greyscale'],
+                                   ['grating', 'border'], ['rms', 'fourier', 'michelson']))
+    metadata.update({'frequency': None, 'contrast': None, 'corrected_contrast': None,
+                     'image_source': [i for i, _, _ in prods],
+                     'grating_type': [j for _, j, _ in prods],
+                     'contrast_type': [k for _, _, k in prods]})
     df = pd.DataFrame(metadata)
     funcs = zip(['mean', 'min', 'max'], [np.mean, np.min, np.max])
     imgs = zip(['luminance', 'demosaiced', 'std_RGB'], [lum_image, demosaiced_image, standard_RGB])
     for (img_name, img), (func_name, func) in itertools.product(imgs, funcs):
         df['%s_%s' % (img_name, func_name)] = func(img)
-    df.set_index(['grating_type', 'contrast_type'], inplace=True)
+    df.set_index(['image_source', 'grating_type', 'contrast_type'], inplace=True)
     try:
         pts_dict = utils.load_pts_dict(metadata['filename'], lum_image.shape)
     except KeyError:
@@ -433,58 +473,26 @@ def main(fname, preprocess_type, blank_lum_image=None):
         fig = utils.plot_masked_images(lum_image, [grating_mask, white_mask, black_mask])
         fig.savefig(save_stem % 'mask_check' + "_masks.png")
         plt.close(fig)
-        grating_rms = rms_contrast(lum_image[grating_mask])
-        df.loc[('grating', 'rms'), 'contrast'] = grating_rms
-        grating_michelson = michelson_contrast(lum_image[grating_mask])
-        df.loc[('grating', 'michelson'), 'contrast'] = grating_michelson
-        # since the masks are boolean, we can simply sum them to get the union
-        border_rms = rms_contrast(lum_image[white_mask+black_mask])
-        df.loc[('border', 'rms'), 'contrast'] = border_rms
-        border_michelson = michelson_contrast(lum_image[white_mask+black_mask])
-        df.loc[('border', 'michelson'), 'contrast'] = border_michelson
-        grating_1d = utils.extract_1d_grating(lum_image, grating_mask, metadata['grating_direction'],
-                                              angle)
-        border = utils.extract_1d_border(lum_image, white_mask, black_mask, x0, y0, angle)
-        _, _, grating_fourier_contrast, grating_fourier_freq = fourier_contrast(grating_1d,
-                                                                                plot_flag=False)
-        df.loc[('grating', 'fourier'), 'frequency'] = np.abs(grating_fourier_freq)
-        df.loc[('grating', 'fourier'), 'contrast'] = grating_fourier_contrast
-        _, _, border_fourier_contrast, border_fourier_freq = fourier_contrast(border,
-                                                                              plot_flag=False)
-        df.loc[('border', 'fourier'), 'frequency'] = np.abs(border_fourier_freq)
-        df.loc[('border', 'fourier'), 'contrast'] = border_fourier_contrast
-        # we also want the corrected contrast
-        if blank_lum_image is not None:
-            lum_image_corrected = lum_image / blank_lum_image
-            # in some rare cases, there's a 0 in blank_lum_image where there's not a zero in
-            # lum_image, which gives an infinity. I'm not sure what to do with that, so throw it to
-            # 0
-            lum_image_corrected[np.isinf(lum_image_corrected)] = 0
-            lum_image_corrected[np.isnan(lum_image_corrected)] = 0
-            imageio.imsave(save_stem % 'corrected_luminance' + '_cor_lum.png', lum_image_corrected)
-            grating_rms_corrected = rms_contrast(lum_image_corrected[grating_mask])
-            border_rms_corrected = rms_contrast(lum_image_corrected[white_mask+black_mask])
-            grating_michelson_corrected = michelson_contrast(lum_image_corrected[grating_mask])
-            border_michelson_corrected = michelson_contrast(lum_image_corrected[white_mask+black_mask])
-            grating_1d = utils.extract_1d_grating(lum_image_corrected, grating_mask,
-                                                  metadata['grating_direction'], angle)
-            border = utils.extract_1d_border(lum_image_corrected, white_mask, black_mask, x0, y0,
-                                             angle)
-            _, _, grating_fourier_corrected, _ = fourier_contrast(grating_1d, plot_flag=False)
-            _, _, border_fourier_corrected, _ = fourier_contrast(border, plot_flag=False)
-            df.loc[('grating', 'rms'), 'lum_corrected_contrast'] = grating_rms_corrected
-            df.loc[('border', 'rms'), 'lum_corrected_contrast'] = border_rms_corrected
-            df.loc[('grating', 'michelson'), 'lum_corrected_contrast'] = grating_michelson_corrected
-            df.loc[('border', 'michelson'), 'lum_corrected_contrast'] = border_michelson_corrected
-            df.loc[('grating', 'fourier'), 'lum_corrected_contrast'] = grating_fourier_corrected
-            df.loc[('border', 'fourier'), 'lum_corrected_contrast'] = border_fourier_corrected
-        grating_rms_freq, border_rms_freq = get_frequency(lum_image, metadata, grating_mask,
-                                                          white_mask, black_mask, x0, y0, angle)
-        df.loc[('grating', 'rms'), 'frequency'] = np.abs(grating_rms_freq)
-        df.loc[('border', 'rms'), 'frequency'] = np.abs(border_rms_freq)
-        # this is the same frequency as the rms one
-        df.loc[('grating', 'michelson'), 'frequency'] = np.abs(grating_rms_freq)
-        df.loc[('border', 'michelson'), 'frequency'] = np.abs(border_rms_freq)
+        for img, img_name, blank_img in zip([lum_image, demosaiced_image_greyscale],
+                                            ['luminance_image', 'demosaiced_image_greyscale'],
+                                            [blank_lum_image, blank_demosaiced_image_greyscale]):
+            if blank_img is not None:
+                img_corrected = img / blank_img
+                # in some rare cases, there's a 0 in blank_img where there's not a zero in
+                # img, which gives an infinity. I'm not sure what to do with that, so throw
+                # it to 0. same thing sometimes happens with nans.
+                img_corrected[np.isinf(img_corrected)] = 0
+                img_corrected[np.isnan(img_corrected)] = 0
+                imageio.imsave(save_stem % 'corrected_%s' % img_name.split('_')[0] + '_cor.png',
+                               img_corrected)
+            for contrast_type in ['rms', 'michelson', 'fourier']:
+                df = get_contrast_in_df(df, img, img_name, contrast_type, grating_mask, white_mask,
+                                        black_mask, metadata, x0, y0, angle)
+                # we also want the corrected contrast
+                if blank_img is not None:
+                    df = get_contrast_in_df(df, img_corrected, img_name, contrast_type,
+                                            grating_mask, white_mask, black_mask, metadata, x0, y0,
+                                            angle, 'corrected_')
         return df.reset_index(), demosaiced_image, standard_RGB, lum_image
 
 
@@ -528,19 +536,24 @@ def mtf(fnames, force_run=False, save_path='mtf.csv'):
         return
     dfs = []
     blank_lum_imgs = {}
+    blank_demosaiced_imgs = {}
     for f, preproc in tuples_to_analyze:
         f_stem = os.path.splitext(os.path.split(f)[-1])[0]
         blank_lum_name = utils.find_corresponding_blank(f_stem)
         if (blank_lum_name, preproc) not in blank_lum_imgs.keys():
-            blank_fullname = os.path.join(os.path.split(f)[0], blank_lum_name) + '.NEF'
-            blank_lum_imgs[(blank_lum_name, preproc)], _, _, _, _ = create_luminance_image(blank_fullname,
-                                                                                           preproc)
+            # grab the proper extension, which will be either NEF or nef
+            blank_fullname = (os.path.join(os.path.split(f)[0], blank_lum_name) +
+                              os.path.splitext(f)[-1])
+            blank_lum, _, _, blank_dem, _ = create_luminance_image(blank_fullname, preproc)
+            blank_lum_imgs[(blank_lum_name, preproc)] = blank_lum
+            blank_demosaiced_imgs[(blank_lum_name, preproc)] = blank_dem.mean(0)
         if (f_stem, preproc) in blank_lum_imgs.keys():
             print("%s is a blank image, skipping..." % f)
             continue
         print("Analyzing %s with preproc method %s" % (f, preproc))
-        blank = blank_lum_imgs[(blank_lum_name, preproc)]
-        df, demosaic, std, lum = main(f, preproc, blank)
+        blank_lum = blank_lum_imgs[(blank_lum_name, preproc)]
+        blank_dem = blank_demosaiced_imgs[(blank_lum_name, preproc)]
+        df, demosaic, std, lum = main(f, preproc, blank_lum, blank_dem)
         dfs.append(df)
     # if this function is only called on a blank image, there will be nothing in the dfs list to
     # concatenate
