@@ -16,9 +16,18 @@ FIRST_PASS_IMGS = ['DSC_0239', 'DSC_0240', 'DSC_0241', 'DSC_0242', 'DSC_0243',
                    'capt0029', 'capt0030', 'capt0032', 'capt0033', 'capt0034',
                    'capt0035', 'capt0042', 'capt0043', 'capt0044', 'capt0045']
 
+def get_raw_img_ext(wildcards):
+    """some raw filenames end in .nef, some in .NEF
+    """
+    if wildcards.filename.startswith('capt'):
+        ext = "nef"
+    else:
+        ext = "NEF"
+    return os.path.join(config['DATA_DIR'], 'raw', '{filename}.%s' % ext)
+
 rule preprocess_image:
     input:
-        os.path.join(config['DATA_DIR'], 'raw', '{filename}.NEF')
+        get_raw_img_ext
     output:
         os.path.join(config['DATA_DIR'], 'preprocessed', '{preproc_method}', '{filename}.{ext}')
     shell:
@@ -26,7 +35,7 @@ rule preprocess_image:
 
 rule image_mtf:
     input:
-        raw = os.path.join(config['DATA_DIR'], 'raw', '{filename}.NEF'),
+        raw = get_raw_img_ext,
         preproc1 = os.path.join(config['DATA_DIR'], 'preprocessed', 'no_demosaic', '{filename}.pgm'),
         preproc2 = os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_vng_demosaic', '{filename}.tiff'),
         preproc3 = os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_ahd_demosaic', '{filename}.tiff')
