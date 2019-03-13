@@ -33,11 +33,21 @@ rule preprocess_image:
     shell:
         "python -m pyspacal.utils {input} -p {wildcards.preproc_method}"
 
-rule preprocess_all:
+# these are 3 separate rules because they will confuse each other: the intermediate outputs created
+# for the vng and ahd demosaic have the same filename (and I can't figure out how to change that),
+# so they cannot be run simultaneously (if you're only running 1 job at a time, then this doesn't
+# matter).
+rule preprocess_all_vng:
+    input:
+        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_vng_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
+
+rule preprocess_all_ahd:
+    input:
+        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_ahd_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
+
+rule preprocess_all_no_demosaic:
     input:
         [os.path.join(config['DATA_DIR'], 'preprocessed', 'no_demosaic', '%s.pgm' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
-        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_vng_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
-        [os.path.join(config['DATA_DIR'], 'preprocessed', 'dcraw_ahd_demosaic', '%s.tiff' % f) for f, v in camera_data.IMG_INFO.items() if v[2] != 'log_polar'],
 
 rule image_mtf:
     input:
