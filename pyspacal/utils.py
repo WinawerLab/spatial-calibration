@@ -246,8 +246,9 @@ def _plot_pts_on_img(img, pts, zoom=1):
 
 
 def check_pts_dict(img, pts_dict, zoom=1):
-    # this is all just to get these pts into the arrangement that _plot_pts_on_img expects
-    pts = [np.array(v).T[[1, 0]] for v in pts_dict.values()]
+    # this is all just to get these pts into the arrangement that _plot_pts_on_img expects. the "if
+    # v" at the end there is because sometimes there's an empty list for one of the pts_dict
+    pts = [np.array(v).T[[1, 0]] for v in pts_dict.values() if v]
     return _plot_pts_on_img(img, pts, zoom)
 
 

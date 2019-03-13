@@ -182,6 +182,9 @@ def _get_initial_guess(square_ctr, grating_edge, white_edge, black_edge):
     rs = []
     for edge in [grating_edge, white_edge, black_edge]:
         if type(edge) is list:
+            if not edge:
+                # if the list is empty, we skip it
+                continue
             edge = edge[0]
         rs.append(utils._square_eqt(edge[0], edge[1], square_ctr[0], square_ctr[1], 0))
     return square_ctr[0], square_ctr[1], rs[0], np.mean(rs[1:]) - rs[0], 0
