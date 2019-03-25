@@ -1,0 +1,12 @@
+gphoto2 2.5.15
+
+Copyright (c) 2000-2017 Lutz Mueller and others
+
+gphoto2 comes with NO WARRANTY, to the extent permitted by law. You may
+redistribute copies of gphoto2 under the terms of the GNU General Public
+License. For more information about these matters, see the files named COPYING.
+
+This version of gphoto2 is using the following software versions and options:
+gphoto2         2.5.15         gcc, popt(m), exif, cdk, aa, jpeg, readline
+libgphoto2      2.5.16         all camlibs, gcc, ltdl, EXIF
+libgphoto2_port 0.12.0         iolibs: disk ptpip serial usb1 usbdiskdirect usbscsi, gcc, ltdl, USB, serial without locking
