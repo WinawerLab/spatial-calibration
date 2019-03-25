@@ -19,9 +19,9 @@ look easy to install on OSX as well).
 The folder `software_versions` contains logs showing the versions used
 of `dcraw`, `exiftool`, `gphoto2`, and the python packages, as well as
 a simple python script used to ease the collection of images with
-`gphoto2`. Unless otherwise specified, it is not thought that the
-specific version matters for the gathering of the data, running of the
-analysis, or the analysis results.
+`gphoto2`. Unless otherwise specified in the `environment.yml` file,
+it is not thought that the specific version matters for the gathering
+of the data, running of the analysis, or the analysis results.
 
 All analyses only run on Linux (Ubuntu 18.04 LTS and CentOS Linux 7),
 but they should work with little to no tweaking on Mac. No guarantee
