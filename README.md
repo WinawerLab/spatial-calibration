@@ -27,6 +27,9 @@ All analyses only run on Linux (Ubuntu 18.04 LTS and CentOS Linux 7),
 but they should work with little to no tweaking on Mac. No guarantee
 they will work on any Microsoft OS.
 
+In order to use the included Snakefile, first set the `DATA_DIR`
+global variable at the top of the file.
+
 # Overview
 
 The goal of this project is to estimate the modulation transfer
