@@ -1,3 +1,5 @@
+CHANGE THE DATAFRAME ARRAY BIT TO USING XARRAY
+
 # spatial-calibration
 
 Python code to check the calibration of displays
