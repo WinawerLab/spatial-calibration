@@ -102,7 +102,7 @@ def calculate_rgb_to_lms(s_rgb, s_lms):
     this regresses the two sensitivity matrices against each other to find the 3x3 matrix that best
     converts from RGB to LMS values.
     """
-    return np.linalg.lstsq(s_rgb, s_lms, rcond=None)[0].transpose()
+    return np.linalg.lstsq(s_rgb, s_lms, rcond=-1)[0].transpose()
 
 
 def calculate_conversion_matrix_scaling_factor(calc_rgb_to_lms, paper_rgb_to_lms=PAPER_RGB_TO_LMS):
