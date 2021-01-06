@@ -136,8 +136,7 @@ MTF:
 
   - Standardize the RGB values. Tkacik et al show their camera sensor
     values are linear with respect to shutter speed, aperture, and
-    ISO, and we assume this; we do not check this. (THIS SHOULD BE
-    REMOVED, IT'S UNNECESSARY I THINK)
+    ISO, and we assume this; we do not check this.
   - Convert the RGB values to LMS (cones), using the sensitivities of
     the Nikon D90 camera from the [camspec
     database](www.gujinwei.org/research/camspec/db.html) (which give
