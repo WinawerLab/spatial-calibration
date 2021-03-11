@@ -27,8 +27,111 @@ All analyses only run on Linux (Ubuntu 18.04 LTS and CentOS Linux 7),
 but they should work with little to no tweaking on Mac. No guarantee
 they will work on any Microsoft OS.
 
-In order to use the included Snakefile, first set the `DATA_DIR`
-global variable at the top of the file.
+If you are unfamiliar with setting up python environments, install
+[miniconda](https://docs.conda.io/en/latest/miniconda.html) for your OS, open
+your terminal, navigate to wherever you have downloaded this repo, and run the
+following:
+
+``` sh
+conda env -f environment.yml
+```
+
+This will create a virtual environment with the necessary python libraries. Once
+you activate the environment by running `conda activate calibration`, `python`
+will use the version installed in that environment and you'll have access to all
+the libraries.
+
+There are two main ways of getting jupyter working so you can view the included
+notebooks:
+
+1. Install jupyter in this calibration environment: 
+
+``` sh
+conda activate calibration
+conda install -c conda-forge jupyterlab
+```
+
+   This is easy but, if you have multiple conda environments and want to use
+   Jupyter notebooks in each of them, it will take up a lot of space.
+   
+2. Use [nb_conda_kernels](https://github.com/Anaconda-Platform/nb_conda_kernels):
+
+``` sh
+# activate your 'base' environment, the default one created by miniconda
+conda activate 
+# install jupyter lab and nb_conda_kernels in your base environment
+conda install -c conda-forge jupyterlab
+conda install nb_conda_kernels
+# install ipykernel in the calibration environment
+conda install -n calibration ipykernel
+```
+
+   This is a bit more complicated, but means you only have one installation of
+   jupyter lab on your machine.
+   
+In either case, to open the notebooks, navigate to this directory on your
+terminal and activate the environment you install jupyter into (`calibration`
+for 1, `base` for 2), then run `jupyter` and open up the notebook. If you
+followed the second method, you should be prompted to select your kernel the
+first time you open a notebook: select the one named "calibration".
+
+# Data
+
+If you wish to re-run the analysis using pictures taken of the projector in
+NYU's Prisma during summer 2018 (as used by the [spatial frequency preferences
+project](https://osf.io/afs85/)), then you can get the raw data from the
+[OSF](https://osf.io/vmu3s/) (`prisma_raw_images.tar.gz`). The OSF also contains
+`mtf-spline.svg` and `mtf-spline.pkl`, which give the relationship between the
+modulation transfer function and the display frequency, as described
+[below](#use), and `mtf.csv`, which contains the data used to generate those
+files, as well as the MTF that results from different ways of measuring the
+contrast, preprocessing the RAW images, and photos taken at different times.
+
+# Use
+
+If you have set up the environment, as described [above](#requirements), and will
+be using `snakemake`, as described below, this will be handled automatically.
+
+Open up `Snakefile` and edit the `DATA_DIR` variable to wherever you would like
+to store the data (by default, this is the `data/` directory within this
+directory). Then, navigate to this directory in your terminal and run:
+
+``` sh
+conda activate calibration
+snakemake -n -prk mtf_spline
+```
+
+Assuming everything is correctly configured, `snakemake` should wait a while it
+builds the analysis DAG, then it should print out the many steps necessary to
+create the final output (see the [overview](#overview) section and the included
+Jupyter notebook `MTF.ipynb` to understand what steps are taken). To actually
+run the command, remove the `-n` flag (and you may want to add `-j N`, where `N`
+is an integer, in order to parallelize the jobs when possible).
+
+At the end of this process, `DATA_DIR` will contain `mtf-spline.svg` and
+`mtf-spline.pkl`. Open up the svg file to view the modulation transfer function
+as a function of the display frequency in cycles per pixel (on a log scale).
+`mtf-spline.pkl` is a pickled python function (an interpolation of the data, as
+shown by the orange line in the plot), which takes spatial frequencies and
+returns the MTF. To load it in, run:
+
+``` python
+import pickle
+with open('path/to/mtf-spline.pkl', 'rb') as f:
+    mtf = pickle.load(f)
+```
+
+A simple example use:
+
+``` python
+# some spatial frequencies
+sfs = np.logspace(-8, -1, base=2)
+mtf(sfs)
+```
+
+See `stimuli.py` in [the spatial frequency
+repo](https://github.com/billbrod/spatial-frequency-preferences/blob/master/sfp/stimuli.py#L1104)
+for a more involved example of how it can be used.
 
 # Overview
 

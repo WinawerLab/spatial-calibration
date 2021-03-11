@@ -1,7 +1,7 @@
 import os
 from pyspacal import camera_data
 
-DATA_DIR = "/mnt/winawerlab/Projects/spatial_calibration/data/contrast_check_images"
+DATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), '.', 'data')
 
 FIRST_PASS_IMGS = ['DSC_0239', 'DSC_0240', 'DSC_0241', 'DSC_0242', 'DSC_0243', 'DSC_0247',
                    'DSC_0248', 'DSC_0249', 'DSC_0250', 'DSC_0252', 'DSC_0254', 'DSC_0255',
@@ -10,6 +10,18 @@ FIRST_PASS_IMGS = ['DSC_0239', 'DSC_0240', 'DSC_0241', 'DSC_0242', 'DSC_0243', '
                    'capt0022', 'capt0023', 'capt0024', 'capt0025', 'capt0026', 'capt0030',
                    'capt0032', 'capt0033', 'capt0034', 'capt0035', 'capt0042', 'capt0043',
                    'capt0044', 'capt0045']
+
+rule download_data:
+    output:
+        [os.path.join(DATA_DIR, 'raw', f'{fname}.{"nef" if fname.startswith("capt") else "NEF"}') for fname in camera_data.IMG_INFO.keys()]
+    params:
+        tar_path = 'prisma_raw_images.tar.gz',
+        dir_name = lambda wildcards, output: os.path.dirname(output[0]),
+    shell:
+        "curl -O -J -L https://osf.io/83fna/download; "
+        "tar xf {params.tar_path} -C {params.dir_name}; "
+        "rm {params.tar_path}"
+
 
 def get_raw_img(wildcards):
     """some raw filenames end in .nef, some in .NEF
@@ -22,7 +34,7 @@ def get_raw_img(wildcards):
 
 rule preprocess_image:
     input:
-        get_raw_img
+        get_raw_img,
     output:
         os.path.join(DATA_DIR, 'preprocessed', '{preproc_method}', '{filename}.{ext}')
     shell:
@@ -69,6 +81,44 @@ rule join_mtf_csv:
             df.append(pd.read_csv(f))
             os.remove(f)
         pd.concat(df).reset_index(drop=True).to_csv(output[0], index=False)
+
+
+rule mtf_spline:
+    input:
+        os.path.join(DATA_DIR, 'mtf.csv')
+    output:
+        os.path.join(DATA_DIR, 'mtf-spline.svg'),
+        os.path.join(DATA_DIR, 'mtf-spline.pkl'),
+    run:
+        import pandas as pd
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from scipy import interpolate
+        import pickle
+        df = pd.read_csv(input[0])
+        constraints = {'image_context': 'projector_4', 'grating_type':
+                       'grating', 'image_source': 'demosaiced_image_greyscale',
+                       'preprocess_type': 'dcraw_vng_demosaic',
+                       'contrast_type': 'michelson'}
+        tmp = df[np.all([df[k]==v for k,v in constraints.items()], 0)]
+        # this averages across the two grating directions, vertical and horizontal
+        mtf_vals = tmp.groupby('display_freq')['corrected_contrast'].mean()
+
+        sns.set_style('white', {'axes.spines.right': False, 'axes.spines.top': False})
+        s = interpolate.UnivariateSpline(mtf_vals.index, mtf_vals.values,k=1)
+        xnew = np.linspace(2**-9, 2**-1)
+        with sns.plotting_context('poster'):
+            plt.figure(figsize=(7,5))
+            plt.semilogx(mtf_vals, 'o', basex=2)
+            plt.semilogx(xnew, s(xnew), basex=2);
+            plt.xlabel('Display frequency (cpp)')
+            plt.ylabel('Michelson Contrast')
+            plt.xticks([2**-9, 2**-7, 2**-5, 2**-3, 2**-1])
+            plt.savefig(output[0], bbox_inches='tight')
+
+        with open(output[1], 'wb') as f:
+            pickle.dump(s, f)
 
 
 rule first_pass:
