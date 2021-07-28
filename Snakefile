@@ -1,7 +1,7 @@
 import os
 from pyspacal import camera_data
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), '.', 'data')
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__name__)), '.', 'data')
 
 FIRST_PASS_IMGS = ['DSC_0239', 'DSC_0240', 'DSC_0241', 'DSC_0242', 'DSC_0243', 'DSC_0247',
                    'DSC_0248', 'DSC_0249', 'DSC_0250', 'DSC_0252', 'DSC_0254', 'DSC_0255',
@@ -89,6 +89,7 @@ rule mtf_spline:
     output:
         os.path.join(DATA_DIR, 'mtf-spline.svg'),
         os.path.join(DATA_DIR, 'mtf-spline.pkl'),
+        os.path.join(DATA_DIR, 'mtf-spline-data.csv'),
     run:
         import pandas as pd
         import seaborn as sns
@@ -104,6 +105,7 @@ rule mtf_spline:
         tmp = df[np.all([df[k]==v for k,v in constraints.items()], 0)]
         # this averages across the two grating directions, vertical and horizontal
         mtf_vals = tmp.groupby('display_freq')['corrected_contrast'].mean()
+        mtf_vals.reset_index().to_csv(output[-1], index=False)
 
         sns.set_style('white', {'axes.spines.right': False, 'axes.spines.top': False})
         s = interpolate.UnivariateSpline(mtf_vals.index, mtf_vals.values,k=1)
