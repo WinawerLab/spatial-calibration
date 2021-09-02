@@ -87,6 +87,9 @@ modulation transfer function and the display frequency, as described
 files, as well as the MTF that results from different ways of measuring the
 contrast, preprocessing the RAW images, and photos taken at different times.
 
+If you use `snakemake` as described in the [Use section](#use), the data will be
+downloaded and arranged onto the path as necessary for the rest of the analysis.
+
 # Use
 
 If you have set up the environment, as described [above](#requirements), and will
@@ -101,8 +104,8 @@ conda activate calibration
 snakemake -n -prk mtf_spline
 ```
 
-Assuming everything is correctly configured, `snakemake` should wait a while it
-builds the analysis DAG, then it should print out the many steps necessary to
+Assuming everything is correctly configured, `snakemake` should wait a while as
+it builds the analysis DAG, then it should print out the many steps necessary to
 create the final output (see the [overview](#overview) section and the included
 Jupyter notebook `MTF.ipynb` to understand what steps are taken). To actually
 run the command, remove the `-n` flag (and you may want to add `-j N`, where `N`
